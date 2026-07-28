@@ -1,0 +1,15 @@
+# PyCharm
+.idea/
+
+# RStudio
+.Rhistory
+.RData
+.Rproj.user/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Windows
+Thumbs.db
+desktop.ini
