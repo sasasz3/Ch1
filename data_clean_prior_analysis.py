@@ -1,48 +1,28 @@
 from datetime import date, datetime, time
-from pathlib import Path
-
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
+from config import DATA_FOLDER
+
+#load data
+REPURCHASES_INPUT = DATA_FOLDER / "repurchases_for_analysis.xlsx"
 
 
-# ============================================================
-# FILE LOCATIONS
-# ============================================================
-
-CH1_FOLDER = Path(
-    r"C:\Users\nxb23156\Documents\OneDrive\Ch1"
-)
-
-REPURCHASES_INPUT = (
-    CH1_FOLDER
-    / "repurchases_for_analysis.xlsx"
-)
-
-LAYOFFS_INPUT = (
-    CH1_FOLDER
-    / "layoff_warn_compustat_unfiltered.xlsx"
-)
-
-REPURCHASES_OUTPUT = (
-    CH1_FOLDER
-    / "repurchases_for_analysis.xlsx"
-)
-
-LAYOFFS_OUTPUT = (
-    CH1_FOLDER
-    / "layoffs_for_analysis.xlsx"
-)
+LAYOFFS_INPUT = DATA_FOLDER  / "layoff_warn_compustat_unfiltered.xlsx"
 
 
-# Excel will display dates in this format.
+REPURCHASES_OUTPUT = DATA_FOLDER / "repurchases_for_analysis.xlsx"
+
+
+LAYOFFS_OUTPUT =  DATA_FOLDER / "layoffs_for_analysis.xlsx"
+
+
+
+# standardise date format
 EXCEL_DATE_FORMAT = "yyyy-mm-dd"
 
 
-# ============================================================
-# COLUMN-NAME STANDARDISATION
-# ============================================================
-
+#standardise column names
 def standardise_column_name(value):
     """
     Convert a column name to lowercase and standardise the

@@ -1,34 +1,14 @@
-from pathlib import Path
-
 import pandas as pd
+from config import DATA_FOLDER
 
 
-# ============================================================
-# FILE LOCATIONS
-# ============================================================
-
-CH1_FOLDER = Path(
-    r"C:\Users\nxb23156\Documents\OneDrive\Ch1"
-)
-
-# This is the lowercase/standardised output created previously.
-INPUT_FILE = (
-    CH1_FOLDER
-    / "layoffs_for_analysis.xlsx"
-)
-
-OUTPUT_FILE = (
-    CH1_FOLDER
-    / "layoffs_for_analysis.xlsx"
-)
-
+# load data
+INPUT_FILE = DATA_FOLDER / "layoffs_for_analysis.xlsx"
+OUTPUT_FILE = DATA_FOLDER / "layoffs_for_analysis.xlsx"
 INPUT_SHEET = "warn_matched"
 
 
-# ============================================================
-# READ INPUT
-# ============================================================
-
+#read input
 if not INPUT_FILE.exists():
     raise FileNotFoundError(
         f"Input file does not exist: {INPUT_FILE}"

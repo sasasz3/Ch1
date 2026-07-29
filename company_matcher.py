@@ -3,27 +3,16 @@ import re
 import time
 from collections import defaultdict
 from functools import lru_cache
-from pathlib import Path
-
+from config import DATA_FOLDER
 import pandas as pd
 from rapidfuzz import fuzz
 
 
-# ============================================================
-# FILE LOCATIONS
-# ============================================================
+# load data
+WARN_FILE = DATA_FOLDER / "layoff_warn.xlsx"
+COMPUSTAT_FILE = DATA_FOLDER / "compustat.xlsx"
+OUTPUT_FILE = DATA_FOLDER / "warn_compustat_unfiltered.xlsx"
 
-WARN_FILE = Path(
-    r"C:\Users\nxb23156\Documents\OneDrive\Ch1\layoff_warn.xlsx"
-)
-
-COMPUSTAT_FILE = Path(
-    r"C:\Users\nxb23156\Documents\OneDrive\Ch1\compustat.xlsx"
-)
-
-OUTPUT_FILE = Path(
-    r"C:\Users\nxb23156\Documents\OneDrive\Ch1\layoff_warn_compustat_unfiltered.xlsx"
-)
 
 LOG_INTERVAL = 100
 

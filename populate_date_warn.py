@@ -1,8 +1,11 @@
 import re
 import pandas as pd
+from config import DATA_FOLDER
 
-# 1. Load the dataset
-df = pd.read_csv("warn-data - for process.csv", keep_default_na=False)
+#load data
+INPUT_FILE = DATA_FOLDER / "warn-data - for process.csv"
+
+df = pd.read_csv(INPUT_FILE, keep_default_na=False)
 df.columns = df.columns.str.strip()
 
 
