@@ -360,3 +360,103 @@ yearly_events[is.na(Earnings), Earnings := 0]
 
 print(yearly_events)
 
+
+#=========================================================
+# UNIQUE FIRMS PER YEAR
+#=========================================================
+
+layoff_firms_yearly <- layoff_events[
+  ,
+  .(Layoff_Firms = uniqueN(gvkey)),
+  by = year
+]
+
+buyback_firms_yearly <- buyback_events[
+  ,
+  .(Buyback_Firms = uniqueN(gvkey)),
+  by = year
+]
+
+earnings_firms_yearly <- earnings_events[
+  ,
+  .(Earnings_Firms = uniqueN(gvkey)),
+  by = year
+]
+
+yearly_summary <- copy(yearly_events)
+
+yearly_summary <- merge(
+  yearly_summary,
+  layoff_firms_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_summary <- merge(
+  yearly_summary,
+  buyback_firms_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_summary <- merge(
+  yearly_summary,
+  earnings_firms_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+cols <- c(
+  "Layoff_Firms",
+  "Buyback_Firms",
+  "Earnings_Firms"
+)
+
+for (col in cols) {
+  yearly_summary[is.na(get(col)), (col) := 0]
+}
+
+print(yearly_summary)
+
+#=========================================================
+# FIRM OVERLAP
+#=========================================================
+
+layoff_firms <- unique(layoff_events$gvkey)
+buyback_firms <- unique(buyback_events$gvkey)
+earnings_firms <- unique(earnings_events$gvkey)
+
+both_firms <- intersect(layoff_firms, buyback_firms)
+
+layoff_only <- setdiff(layoff_firms, buyback_firms)
+
+buyback_only <- setdiff(buyback_firms, layoff_firms)
+
+neither <- setdiff(
+  earnings_firms,
+  union(layoff_firms, buyback_firms)
+)
+
+firm_overlap <- data.table(
+  
+  Category = c(
+    "Layoff firms",
+    "Buyback firms",
+    "Both layoff and buyback",
+    "Layoff only",
+    "Buyback only",
+    "Neither"
+  ),
+  
+  Firms = c(
+    length(layoff_firms),
+    length(buyback_firms),
+    length(both_firms),
+    length(layoff_only),
+    length(buyback_only),
+    length(neither)
+  )
+  
+)
+
+print(firm_overlap)
