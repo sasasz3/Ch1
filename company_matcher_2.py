@@ -17,27 +17,22 @@ OUTPUT_FILE = DATA_FOLDER / "warn_compustat_unfiltered.xlsx"
 LOG_INTERVAL = 100
 
 
-# ============================================================
-# CLEANING PATTERNS
-# ============================================================
+# COMPANY NAME STRIPPING AND CLEANING RULES
 
+#getting rid of parenthesis () and []
 PARENTHESES_PATTERN = re.compile(r"\([^()]*\)")
 
 SQUARE_BRACKETS_PATTERN = re.compile(
     r"\[[^\[\]]*\]"
 )
 
-# Remove share-class endings such as:
-#   - CL A
-#   - cl a
-#   - Cl B
+#removing share-class endings cl -a, cl - b
 CLASS_SUFFIX_PATTERN = re.compile(
     r"\s*-\s*cl\s+[ab]\b",
     flags=re.IGNORECASE,
 )
 
-# Keep letters, numbers, spaces and apostrophes.
-# Ampersands and other special characters are removed.
+# removing all characters except letters, numbers and apostrophes
 SPECIAL_CHARACTER_PATTERN = re.compile(
     r"[^\w\s']",
     flags=re.UNICODE,
@@ -50,7 +45,7 @@ THE_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 
-# Protect U.S. while other punctuation is removed.
+#special function to keep the word "U.S"
 US_PATTERN = re.compile(
     r"(?<!\w)u\s*\.\s*s\s*\.?(?!\w)",
     flags=re.IGNORECASE,
@@ -59,8 +54,9 @@ US_PATTERN = re.compile(
 US_PLACEHOLDER = "specialustoken"
 
 
-# Remove operational/location descriptions and any identification
-# numbers immediately following them.
+
+# removing operational/location descriptions and any identification
+# and numbers immediately following them
 OPERATIONAL_PATTERN = re.compile(
     r"""
     \b(?:
@@ -84,11 +80,7 @@ OPERATIONAL_PATTERN = re.compile(
 )
 
 
-# ============================================================
-# LEGAL-TERM STANDARDISATION
-# ============================================================
-
-# Specific legal phrases must appear before general phrases.
+#standardising legal phrases in company names
 LEGAL_STANDARDISATIONS = [
     # Professional limited liability company
     (
@@ -294,7 +286,7 @@ LEGAL_STANDARDISATIONS = [
 ]
 
 
-# Legal terms remain in cleaned names but are removed from the
+# legal terms remain in cleaned names for review purposes but are removed from the
 # representation used for fallback matching and scoring.
 LEGAL_ABBREVIATIONS = {
     "co",
@@ -315,7 +307,7 @@ LEGAL_ABBREVIATIONS = {
 }
 
 
-# Use exactly the requested low-information list.
+#low information words are treated with lower priority not to distort matching score
 LOW_INFORMATION_WORDS = {
     "holdings",
     "hldgs",
@@ -327,8 +319,7 @@ LOW_INFORMATION_WORDS = {
 }
 
 
-# These phrases remain in the cleaned output but are removed from
-# the beginning of the fallback matching representation.
+# cautious openings appear in a lot of names so they are taken out before matching rule applied
 CAUTIOUS_OPENING_PHRASES = [
     ("house", "of"),
     ("united", "states"),
@@ -340,14 +331,11 @@ CAUTIOUS_OPENING_PHRASES = [
 ]
 
 
-# ============================================================
-# CLEANING FUNCTIONS
-# ============================================================
+# APPLY CLEANING AND STRIPPING FUNCTIONS
 
+#remove parentheses
 def remove_bracketed_text(text):
-    """
-    Remove (...) and [...] together with their contents.
-    """
+
     previous_text = None
 
     while text != previous_text:
@@ -366,11 +354,10 @@ def remove_bracketed_text(text):
     return text
 
 
+#cuts company names to four words for efficiency reasons
 @lru_cache(maxsize=None)
 def clean_company_name(value):
-    """
-    Clean, standardise and cut a company name to four words.
-    """
+
     if value is None:
         return ""
 
@@ -382,51 +369,51 @@ def clean_company_name(value):
 
     text = str(value).casefold()
 
-    # Standardise apostrophes.
+    #standardise apostrophes
     text = text.replace("’", "'")
     text = text.replace("`", "'")
 
-    # Remove parenthetical and square-bracket information.
+    #remove parenthetical and square-bracket information
     text = remove_bracketed_text(text)
 
-    # Remove share-class suffixes before removing hyphens.
+    #remove share-class suffixes before removing hyphens.
     text = CLASS_SUFFIX_PATTERN.sub(
         " ",
         text,
     )
 
-    # Protect U.S.
+    #special rule for the word "U.S."
     text = US_PATTERN.sub(
         f" {US_PLACEHOLDER} ",
         text,
     )
 
-    # Standardise legal terms.
+    #standardise legal terms.
     for pattern, replacement in LEGAL_STANDARDISATIONS:
         text = pattern.sub(
             f" {replacement} ",
             text,
         )
 
-    # Remove operational/location words and following numbers.
+    #remove operational/location words and following numbers.
     text = OPERATIONAL_PATTERN.sub(
         " ",
         text,
     )
 
-    # Remove special characters, including ampersands.
+    #remove special characters, including ampersands.
     text = SPECIAL_CHARACTER_PATTERN.sub(
         " ",
         text,
     )
 
-    # Remove "the".
+    #remove the word "the".
     text = THE_PATTERN.sub(
         " ",
         text,
     )
 
-    # Normalise whitespace.
+    #normalise whitespace.
     text = SPACE_PATTERN.sub(
         " ",
         text,
@@ -434,18 +421,18 @@ def clean_company_name(value):
 
     words = text.split()
 
-    # Restore U.S. with periods.
+    # restore U.S. with periods.
     words = [
         "U.S." if word == US_PLACEHOLDER else word
         for word in words
     ]
 
-    # Maximum of four cleaned words.
+    # raximum of four cleaned words.
     words = words[:4]
 
     return " ".join(words)
 
-
+#creating word tuple to find and compare full words against each other
 def get_words(cleaned_name):
     """Convert a cleaned company name into a word tuple."""
     return tuple(cleaned_name.split())
@@ -506,10 +493,7 @@ def low_information_remainder(words):
     )
 
 
-# ============================================================
-# TWO-WORD SCORE
-# ============================================================
-
+#logic for treating cases where only the first two word matches
 def positional_word_score(
     warn_word,
     compustat_word,
@@ -608,9 +592,7 @@ def two_word_remainder_score(
     return round(final_score, 2)
 
 
-# ============================================================
-# ONE-WORD RULE
-# ============================================================
+#rules for when only the first words matches in the company names
 
 def one_word_match_allowed(
     warn_matching_words,
@@ -679,10 +661,7 @@ def one_word_remainder_score(
     )
 
 
-# ============================================================
-# TIME FORMATTING
-# ============================================================
-
+#keeping track of time during execution
 def format_time(seconds):
     """Convert seconds into a readable duration."""
     if seconds is None or not math.isfinite(seconds):
@@ -713,17 +692,14 @@ def format_time(seconds):
     return f"{seconds}s"
 
 
-# ============================================================
-# READ INPUT WORKBOOKS
-# ============================================================
-
+#reading in files
 print("Reading WARN workbook...", flush=True)
 
 warn_data = pd.read_csv(
     WARN_FILE,
     keep_default_na=False,
 )
-# Rename the messy WARN columns
+#rename the messy WARN columns
 warn_data.rename(
     columns={
         "State": "Region",
@@ -766,10 +742,7 @@ if "SIC" not in compustat_data.columns:
     )
 
 
-# ============================================================
-# EXCLUDE COMPUSTAT SIC RANGES
-# ============================================================
-
+#excluding unwanted companies from financial and utilities industries for a cleaner matching
 sic_numeric = pd.to_numeric(
     compustat_data["SIC"],
     errors="coerce",
@@ -811,10 +784,7 @@ print(
 )
 
 
-# ============================================================
-# CLEAN COMPUSTAT NAMES
-# ============================================================
-
+#cleaning compustat company names
 print("Cleaning Compustat company names...", flush=True)
 
 compustat_data = compustat_data[
@@ -874,19 +844,17 @@ compustat_sic = compustat_data[
 ].tolist()
 
 
-# ============================================================
-# BUILD MATCHING INDEXES
-# ============================================================
+# building matching indexes
 
 print("Building matching indexes...", flush=True)
 
-# Complete cleaned names, including legal terms.
+#complete cleaned names, including legal terms
 exact_name_index = defaultdict(list)
 
-# Complete substantive names, excluding legal terms.
+#complete substantive names, excluding legal terms
 substantive_name_index = defaultdict(list)
 
-# Prefixes after excluding legal terms and cautious openings.
+#prefixes after excluding legal terms and cautious openings
 matching_prefix_index = {
     1: defaultdict(set),
     2: defaultdict(set),
@@ -935,10 +903,7 @@ for company_index in range(len(compustat_data)):
         ][prefix].add(company_index)
 
 
-# ============================================================
-# MATCH OUTPUT HELPER
-# ============================================================
-
+# output helper functions
 def candidate_result(
     candidate_index,
     similarity,
@@ -981,9 +946,7 @@ def no_match_result(reason):
     )
 
 
-# ============================================================
-# MATCH ONE WARN COMPANY
-# ============================================================
+#forcing independent matching
 
 @lru_cache(maxsize=None)
 def match_one_company(warn_clean_name):
@@ -1015,14 +978,6 @@ def match_one_company(warn_clean_name):
             "Empty WARN name"
         )
 
-    # --------------------------------------------------------
-    # 1. Complete cleaned exact match
-    #
-    # This catches exact names of every length, including:
-    #   Motorola
-    #   Jones Apparel
-    # --------------------------------------------------------
-
     exact_candidates = exact_name_index.get(
         warn_clean_words,
         [],
@@ -1043,13 +998,6 @@ def match_one_company(warn_clean_name):
             ),
         )
 
-    # --------------------------------------------------------
-    # 2. Complete legal-equivalent exact match
-    #
-    # Examples:
-    #   Jones Apparel Inc
-    #   Jones Apparel Corp
-    # --------------------------------------------------------
 
     warn_substantive_words = remove_legal_words(
         warn_clean_words
@@ -1095,9 +1043,7 @@ def match_one_company(warn_clean_name):
             ),
         )
 
-    # --------------------------------------------------------
-    # Create fallback matching representation
-    # --------------------------------------------------------
+
 
     warn_matching_words = (
         create_matching_words(
@@ -1110,9 +1056,8 @@ def match_one_company(warn_clean_name):
             "No words remain after legal and cautious exclusions"
         )
 
-    # --------------------------------------------------------
-    # 3. Four-word match -> EXACT
-    # --------------------------------------------------------
+
+
 
     if len(warn_matching_words) >= 4:
         four_word_prefix = (
@@ -1153,9 +1098,7 @@ def match_one_company(warn_clean_name):
                 ),
             )
 
-    # --------------------------------------------------------
-    # 4. Three-word match -> EXACT
-    # --------------------------------------------------------
+
 
     if len(warn_matching_words) >= 3:
         three_word_prefix = (
@@ -1196,12 +1139,7 @@ def match_one_company(warn_clean_name):
                 ),
             )
 
-    # --------------------------------------------------------
-    # 5. Two-word match -> REVIEW
-    #
-    # Third word receives 85% weight.
-    # Fourth word receives 15% weight.
-    # --------------------------------------------------------
+
 
     if len(warn_matching_words) >= 2:
         two_word_prefix = (
@@ -1257,12 +1195,6 @@ def match_one_company(warn_clean_name):
                 ),
             )
 
-    # --------------------------------------------------------
-    # 6. One-word structural match -> REVIEW
-    #
-    # The remaining words on both sides must be absent or
-    # low-information words.
-    # --------------------------------------------------------
 
     one_word_prefix = (
         warn_matching_words[:1]
@@ -1330,9 +1262,7 @@ def match_one_company(warn_clean_name):
     )
 
 
-# ============================================================
-# CLEAN AND MATCH WARN DATA
-# ============================================================
+# clean and match
 
 print("Cleaning WARN company names...", flush=True)
 
@@ -1421,9 +1351,7 @@ matching_time = (
 )
 
 
-# ============================================================
 # CREATE UNFILTERED OUTPUT
-# ============================================================
 
 result_columns = pd.DataFrame(
     results,
@@ -1460,9 +1388,7 @@ output_data = pd.concat(
     axis=1,
 )
 
-# ============================================================
-# UNFILTERED UNIQUE GVKEY COUNTS
-# ============================================================
+# COUNT UNIQUE MATCHES
 
 # Standardise gvkey only for counting.
 output_data["Compustat_gvkey"] = (
@@ -1564,9 +1490,7 @@ gvkey_summary = gvkey_summary.merge(
 
 
 
-# ============================================================
-# UNFILTERED SUMMARY
-# ============================================================
+# SUMMARY
 
 exact_rows = int(
     (
@@ -1666,9 +1590,7 @@ matching_summary = pd.DataFrame(
     }
 )
 
-# ============================================================
-# SAVE UNFILTERED OUTPUT
-# ============================================================
+# SAVE EVERYTHING
 
 print()
 print("Writing unfiltered output...", flush=True)
