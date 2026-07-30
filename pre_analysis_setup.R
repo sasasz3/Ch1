@@ -19,14 +19,14 @@ cal <- setDT(
 
 layoffs <- setDT(
   read_excel(
-    file.path(DATA_FOLDER, "layoffs_for_analysis.xlsx"),
+    file.path(DATA_FOLDER, "layoffs_data_final.xlsx"),
     sheet = "layoffs"
   )
 )
 
 sdc <- setDT(
   read_excel(
-    file.path(DATA_FOLDER, "repurchases_for_analysis.xlsx"),
+    file.path(DATA_FOLDER, "repurchases_data_final.xlsx"),
     sheet = "sdc"
   )
 )
@@ -74,136 +74,148 @@ lapply(list(cal, layoffs, sdc, earnings, link_table), fix_gvkey)
 tables_with_date <- list(cal, sdc, layoffs, earnings)
 lapply(tables_with_date, function(x) x[, date := as.Date(date)])
 
+# Restrict earnings announcements to the study period
+earnings <- earnings[
+  !is.na(date) &
+    date >= as.Date("2002-01-01") &
+    date <= as.Date("2025-12-31")
+]
+
 link_table[, `:=`(
   linkdt = as.Date(linkdt),
   linkenddt = as.Date(linkenddt)
 )]
 link_table[is.na(linkenddt), linkenddt := as.Date("2026-12-31")]
 
-#create trading day index to accurately calculate distance from layoff announcement
-setorder(cal, date)
+
+
+# CREATE TRADING DAY CALENDAR
+
+cal <- cal[!is.na(date)]
 cal <- unique(cal, by = "date")
-cal[, t_index := 1:.N]
+setorder(cal, date)
 
+# Create an integer trading-day index
+cal[, t_index := .I]
 
-#creating the bases for trading day calendar
-all_gvkeys <- unique(c(sdc$gvkey, layoffs$gvkey))
+# Use explicit names to avoid confusion in later joins
+trading_calendar <- cal[, .(
+  trading_date = date,
+  t_index
+)]
 
-
-#create panel using cross join function 
-#creates a row for every comp (gvkey) for every trading day (date)
-master_panel <- CJ(gvkey = all_gvkeys, date = cal$date)
-master_panel <- merge(master_panel, cal[, .(date, t_index)], by = "date")
-setkey(master_panel, gvkey, date)
-
-
-
-# create new table and assign the nearest date to it from the trading calendar 
-# only rolls forward so that weekend announcements will appear on Monday not Friday
-#assigns calendar index for the date it found
-layoff_lookup <- cal[layoffs, on = .(date), roll = -Inf, 
-                     .(gvkey, date, layoff_t = t_index)] 
-layoff_lookup <- unique(layoff_lookup, by = c("gvkey", "date"))
-setkey(layoff_lookup, gvkey, date)
-
-
-#for each firm-date in master panel find the nearest layoff 
-#calculate distance by taking master panel index minus the layoff lookup index
-#if date is before the layoff announcement distance will return minus and vice versa
-master_panel[, nearest_layoff_t := layoff_lookup[master_panel, 
-                                                 on = .(gvkey, date), 
-                                                 roll = "nearest", 
-                                                 x.layoff_t]]
-
-# current index (master_panel) - index at nearest layoff (layoff_lookup)
-master_panel[, dist_to_layoff := t_index - nearest_layoff_t]
-
-#set distance for days where firm has never done layoff
-master_panel[is.na(dist_to_layoff), dist_to_layoff := 99999]
+setkey(trading_calendar, trading_date)
 
 
 
 
+# MAP EVENTS TO THE NEXT AVAILABLE TRADING DAY
 
-#create buyback dummies by rolling sdc buybacks to nearest trading days
-sdc_lookup <- cal[sdc, on = .(date), roll = -Inf, 
-                  .(gvkey, date, is_buyback = 1)]
-sdc_lookup <- unique(sdc_lookup, by = c("gvkey", "date"))
-
-#merge the buybacks with the master panel where for each date is_buyback
-#takes the value of 1 if buyback happened for specific firm and 0 otherwise
-master_panel[sdc_lookup, on = .(gvkey, date), is_buyback := 1]
-master_panel[is.na(is_buyback), is_buyback := 0]
-
-
-#create earnings dummy 
-earnings_lookup <- cal[earnings, on = .(date), roll = "nearest", .(gvkey, date)]
-earnings_lookup <- unique(earnings_lookup, by = c("gvkey", "date"))
-
-#identify earning days
-master_panel[, is_earnings := 0]
-master_panel[earnings_lookup, on = .(gvkey, date), is_earnings := 1]
-
-#
-#event summary
-event_summary <- master_panel[is_buyback == 1 & abs(dist_to_layoff) <= 30, 
-                              .(count = .N), 
-                              by = dist_to_layoff][order(dist_to_layoff)]
-
-print(event_summary)
-
-#visual plot
-window_size <- 125
-
-#sum 'is_buyback' for every relative day index
-plot_data <- master_panel[abs(dist_to_layoff) <= window_size, 
-                          .(buyback_count = sum(is_buyback)), 
-                          by = dist_to_layoff]
-
-setorder(plot_data, dist_to_layoff)
-
-#create plot 
-ggplot(
-  plot_data,
-  aes(
-    x = dist_to_layoff,
-    y = buyback_count
+map_to_trading_day <- function(DT, event_name) {
+  
+  events <- copy(
+    DT[
+      !is.na(gvkey) &
+        gvkey != "" &
+        !is.na(date)
+    ]
   )
-) +
-  geom_line(
-    color = "#2c3e50",
-    linewidth = 1
-  ) +
-  geom_col(
-    fill = "steelblue",
-    alpha = 0.3
-  ) +
-  geom_vline(
-    xintercept = 0,
-    linetype = "dashed",
-    color = "red",
-    linewidth = 1
-  ) +
-  labs(
-    title = "Buyback Activity Surrounding Layoff Announcements",
-    subtitle = paste0(
-      "Aggregated across ",
-      uniqueN(master_panel$gvkey),
-      " firms (2002–2025)"
-    ),
-    x = "Trading Days from Layoff Announcement (t = 0)",
-    y = "Total Number of Buyback Announcements"
-  ) +
-  annotate(
-    "text",
-    x = 5,
-    y = max(plot_data$buyback_count, na.rm = TRUE),
-    label = "Layoff Date",
-    color = "red",
-    hjust = 0
-  ) +
-  theme_minimal()
+  
+  # Preserve the original reported event date
+  setnames(events, "date", "original_date")
+  
+  # Position of the next trading day:
+  # findInterval gives the number of trading dates strictly before
+  # or equal to the adjusted date.
+  events[, calendar_position :=
+           findInterval(
+             original_date - 1,
+             trading_calendar$trading_date
+           ) + 1L
+  ]
+  
+  # Events after the end of the calendar cannot be mapped
+  events[
+    calendar_position > nrow(trading_calendar),
+    calendar_position := NA_integer_
+  ]
+  
+  # Attach the matched trading date and index
+  events[
+    !is.na(calendar_position),
+    `:=`(
+      trading_date =
+        trading_calendar$trading_date[calendar_position],
+      
+      t_index =
+        trading_calendar$t_index[calendar_position]
+    )
+  ]
+  
+  # Ensure unmatched observations have correctly typed missing values
+  events[
+    is.na(calendar_position),
+    `:=`(
+      trading_date = as.Date(NA),
+      t_index = NA_integer_
+    )
+  ]
+  
+  events[, event_type := event_name]
+  
+  events[
+    ,
+    shifted_to_trading_day :=
+      !is.na(trading_date) &
+      original_date != trading_date
+  ]
+  
+  events[
+    ,
+    calendar_days_shifted :=
+      as.integer(trading_date - original_date)
+  ]
+  
+  events[, calendar_position := NULL]
+  
+  first_columns <- c(
+    "gvkey",
+    "event_type",
+    "original_date",
+    "trading_date",
+    "t_index",
+    "shifted_to_trading_day",
+    "calendar_days_shifted"
+  )
+  
+  setcolorder(
+    events,
+    c(
+      first_columns,
+      setdiff(names(events), first_columns)
+    )
+  )
+  
+  setorder(events, gvkey, original_date)
+  
+  events[]
+}
 
+
+layoff_events <- map_to_trading_day(
+  layoffs,
+  "Layoff"
+)
+
+buyback_events <- map_to_trading_day(
+  sdc,
+  "Buyback"
+)
+
+earnings_events <- map_to_trading_day(
+  earnings,
+  "Earnings"
+)
 
 
 
