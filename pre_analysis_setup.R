@@ -144,52 +144,7 @@ earnings_lookup <- unique(earnings_lookup, by = c("gvkey", "date"))
 master_panel[, is_earnings := 0]
 master_panel[earnings_lookup, on = .(gvkey, date), is_earnings := 1]
 
-#create fiscal year map
-fyr_map <- unique(earnings[, .(gvkey, fyr)])
-
-#delete duplicates
-if(any(duplicated(fyr_map$gvkey))) {
-  # If a firm changed its FYR, we take the most recent one for consistency
-  fyr_map <- earnings[, .(fyr = last(fyr)), by = gvkey]
-}
-
-#merge fiscal year map into master panel
-master_panel <- merge(master_panel, fyr_map, by = "gvkey", all.x = TRUE)
-
-master_panel[is.na(fyr), fyr := 12]
-
-# take year and month from each date
-master_panel[, `:=`(
-  m = month(date),
-  y = year(date)
-)]
-
-#assign months correctly associated with fiscal year
-master_panel[, shift_m := (m - fyr)]
-master_panel[shift_m <= 0, shift_m := shift_m + 12]
-
-#assign fiscal year and quarter
-master_panel[, fyear := ifelse(m > fyr, y, y - 1)]
-master_panel[, fqtr := ceiling(shift_m / 3)]
-
-#remove helper columns
-master_panel[, (c("m", "y", "shift_m", "fyr")) := NULL]
-
-
-#get general statistics of firms doing same year and same quarter announcements
-qtrs_with_layoffs <- unique(master_panel[dist_to_layoff == 0, .(gvkey, fyear, fqtr)])
-years_with_layoffs <- unique(master_panel[dist_to_layoff == 0, .(gvkey, fyear)])
-
-qtrs_with_buybacks <- unique(master_panel[is_buyback == 1, .(gvkey, fyear, fqtr)])
-years_with_buybacks <- unique(master_panel[is_buyback == 1, .(gvkey, fyear)])
-
-#find overlap
-overlap_qtr  <- merge(qtrs_with_layoffs, qtrs_with_buybacks, by = c("gvkey", "fyear", "fqtr"))
-overlap_year <- merge(years_with_layoffs, years_with_buybacks, by = c("gvkey", "fyear"))
-
-cat("Instances in the same Quarter:", nrow(overlap_qtr), "\n")
-cat("Instances in the same Year:   ", nrow(overlap_year), "\n")
-
+#
 #event summary
 event_summary <- master_panel[is_buyback == 1 & abs(dist_to_layoff) <= 30, 
                               .(count = .N), 
