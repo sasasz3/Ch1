@@ -218,4 +218,145 @@ earnings_events <- map_to_trading_day(
 )
 
 
+# DESCRIPTIVE STATISTICS
+
+dataset_overview <- function(DT, dataset_name) {
+  
+  data.table(
+    Dataset = dataset_name,
+    Observations = nrow(DT),
+    Unique_Firms = uniqueN(DT$gvkey),
+    First_Date = min(DT$original_date),
+    Last_Date = max(DT$original_date)
+  )
+}
+
+overview_table <- rbindlist(list(
+  
+  dataset_overview(
+    layoff_events,
+    "Layoffs"
+  ),
+  
+  dataset_overview(
+    buyback_events,
+    "Buybacks"
+  ),
+  
+  dataset_overview(
+    earnings_events,
+    "Earnings"
+  )
+  
+))
+
+print(overview_table)
+
+
+
+
+# EVENT FREQUENCY PER FIRM
+
+event_frequency_summary <- function(DT, dataset_name) {
+  
+  firm_events <- DT[
+    ,
+    .(events = .N),
+    by = gvkey
+  ]
+  
+  data.table(
+    Dataset = dataset_name,
+    Firms = nrow(firm_events),
+    Firms_One_Event = sum(firm_events$events == 1),
+    Mean_Events = round(mean(firm_events$events), 2),
+    Median_Events = median(firm_events$events),
+    P25 = unname(quantile(firm_events$events, 0.25)),
+    P75 = unname(quantile(firm_events$events, 0.75)),
+    SD_Events = round(sd(firm_events$events), 2),
+    Min_Events = min(firm_events$events),
+    Max_Events = max(firm_events$events)
+  )
+}
+
+event_frequency_table <- rbindlist(list(
+  
+  event_frequency_summary(
+    layoff_events,
+    "Layoffs"
+  ),
+  
+  event_frequency_summary(
+    buyback_events,
+    "Buybacks"
+  ),
+  
+  event_frequency_summary(
+    earnings_events,
+    "Earnings"
+  )
+  
+))
+
+print(event_frequency_table)
+
+
+
+
+# CHECK YEARLY FREQUENCY OF EVENTS
+
+layoff_events[, year := year(original_date)]
+buyback_events[, year := year(original_date)]
+earnings_events[, year := year(original_date)]
+
+
+layoff_yearly <- layoff_events[
+  ,
+  .(Layoffs = .N),
+  by = year
+]
+
+buyback_yearly <- buyback_events[
+  ,
+  .(Buybacks = .N),
+  by = year
+]
+
+earnings_yearly <- earnings_events[
+  ,
+  .(Earnings = .N),
+  by = year
+]
+
+
+yearly_events <- data.table(
+  year = 2002:2025
+)
+
+yearly_events <- merge(
+  yearly_events,
+  layoff_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_events <- merge(
+  yearly_events,
+  buyback_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_events <- merge(
+  yearly_events,
+  earnings_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_events[is.na(Layoffs), Layoffs := 0]
+yearly_events[is.na(Buybacks), Buybacks := 0]
+yearly_events[is.na(Earnings), Earnings := 0]
+
+print(yearly_events)
 
