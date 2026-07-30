@@ -5,16 +5,16 @@ from openpyxl.utils.datetime import from_excel
 from config import DATA_FOLDER
 
 #load data
-REPURCHASES_INPUT = DATA_FOLDER / "repurchases_for_analysis.xlsx"
+REPURCHASES_INPUT = DATA_FOLDER / "sdc_data_filtered.xlsx"
 
 
-LAYOFFS_INPUT = DATA_FOLDER  / "layoff_warn_compustat_unfiltered.xlsx"
+LAYOFFS_INPUT = DATA_FOLDER  / "warn_compustat_filtered.xlsx"
 
 
-REPURCHASES_OUTPUT = DATA_FOLDER / "repurchases_for_analysis.xlsx"
+REPURCHASES_OUTPUT = DATA_FOLDER / "repurchases_data_final.xlsx"
 
 
-LAYOFFS_OUTPUT =  DATA_FOLDER / "layoffs_for_analysis.xlsx"
+LAYOFFS_OUTPUT =  DATA_FOLDER / "layoffs_data_final.xlsx"
 
 
 
@@ -40,17 +40,14 @@ def standardise_column_name(value):
 
     gvkey_names = {
         "gvkey",
-        "gvkeys",
         "compustat_gvkey",
-        "compustat gvkey",
     }
 
     if column_name in gvkey_names:
         return "gvkey"
 
     date_names = {
-        "date",
-        "dates",
+        "date announced",
         "effective date",
     }
 
@@ -59,11 +56,7 @@ def standardise_column_name(value):
 
     return column_name
 
-
-# ============================================================
-# DATE STANDARDISATION
-# ============================================================
-
+#standardise dates
 def convert_to_excel_date(
     value,
     workbook_epoch,
@@ -76,7 +69,7 @@ def convert_to_excel_date(
     if value is None or value == "":
         return None
 
-    # Already a datetime.
+    # already a datetime.
     if isinstance(value, datetime):
         return value.replace(
             hour=0,
@@ -86,14 +79,14 @@ def convert_to_excel_date(
             tzinfo=None,
         )
 
-    # Already a date without a time.
+    # already a date without a time.
     if isinstance(value, date):
         return datetime.combine(
             value,
             time.min,
         )
 
-    # Handle an Excel date serial number.
+    # handle an Excel date serial number.
     if isinstance(value, (int, float)):
         try:
             converted = from_excel(
@@ -132,7 +125,7 @@ def convert_to_excel_date(
 
     converted = converted.to_pydatetime()
 
-    # Remove timezone information if present.
+    # remove timezone information if present.
     if converted.tzinfo is not None:
         converted = converted.replace(
             tzinfo=None
@@ -204,9 +197,7 @@ def standardise_date_column(
     }
 
 
-# ============================================================
-# WORKBOOK PROCESSING
-# ============================================================
+#execute in workbook
 
 def standardise_workbook(
     input_file,

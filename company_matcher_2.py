@@ -9,7 +9,7 @@ from rapidfuzz import fuzz
 
 
 # load data
-WARN_FILE = DATA_FOLDER / "layoff_warn.xlsx"
+WARN_FILE = DATA_FOLDER / "warn_data_date_fixed.csv"
 COMPUSTAT_FILE = DATA_FOLDER / "compustat.xlsx"
 OUTPUT_FILE = DATA_FOLDER / "warn_compustat_unfiltered.xlsx"
 
@@ -719,10 +719,21 @@ def format_time(seconds):
 
 print("Reading WARN workbook...", flush=True)
 
-warn_data = pd.read_excel(
+warn_data = pd.read_csv(
     WARN_FILE,
-    sheet_name="warn",
-    engine="openpyxl",
+    keep_default_na=False,
+)
+# Rename the messy WARN columns
+warn_data.rename(
+    columns={
+        "State": "Region",
+        "Company": "State",
+        "City": "Company",
+        "Workers": "City",
+        "WARN Date": "Address",
+        # "Effective Date" and all remaining columns stay unchanged
+    },
+    inplace=True,
 )
 
 print("Reading Compustat workbook...", flush=True)
