@@ -11,6 +11,7 @@ __pycache__/
 *.py[cod]
 
 config.py
+config.R
 
 # Windows
 Thumbs.db
