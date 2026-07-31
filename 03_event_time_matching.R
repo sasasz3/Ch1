@@ -1,9 +1,7 @@
 
 library(data.table)
 
-#---------------------------------------------------------
-# 1. Check that the required datasets exist
-#---------------------------------------------------------
+#EVENT TIME MATCHING
 
 required_objects <- c(
   "layoff_events",
@@ -22,9 +20,6 @@ if (length(missing_objects) > 0) {
   )
 }
 
-#---------------------------------------------------------
-# 2. Prepare layoff events
-#---------------------------------------------------------
 
 layoffs_match <- copy(layoff_events)[
   !is.na(gvkey) &
@@ -57,9 +52,7 @@ layoffs_match[
 ]
 
 
-#---------------------------------------------------------
-# 3. Prepare buyback events
-#---------------------------------------------------------
+#Buybayk identifiers
 
 buybacks_match <- copy(buyback_events)[
   !is.na(gvkey) &
@@ -91,9 +84,9 @@ buybacks_match[
   buyback_join_index := buyback_t_index
 ]
 
-#---------------------------------------------------------
-# 4. Create every same-firm pair within +/- 30 trading days
-#---------------------------------------------------------
+
+
+# create every same-firm pair within +/- 30 trading days
 
 layoff_buyback_pairs <- buybacks_match[
   layoffs_match,
@@ -187,9 +180,9 @@ layoff_pair_summary <- layoff_buyback_pairs[
   by = layoff_id
 ]
 
-#=========================================================
+
 # CREATE COMPLETE LAYOFF-LEVEL EVENT-TIME DATASET
-#=========================================================
+
 
 layoff_event_time <- merge(
   layoffs_match[
