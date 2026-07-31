@@ -282,3 +282,38 @@ window_summary[
 ]
 
 print(window_summary)
+
+
+
+event_time_distribution <- layoff_buyback_pairs[
+  ,
+  .(
+    Buyback_Pairs = .N,
+    Layoffs = uniqueN(layoff_id)
+  ),
+  by = distance
+]
+
+event_time_distribution <- merge(
+  data.table(distance = -30:30),
+  event_time_distribution,
+  by = "distance",
+  all.x = TRUE
+)
+
+event_time_distribution[
+  is.na(Buyback_Pairs),
+  Buyback_Pairs := 0
+]
+
+event_time_distribution[
+  is.na(Layoffs),
+  Layoffs := 0
+]
+
+print(event_time_distribution)
+
+event_time_distribution[
+  distance >= -10 &
+    distance <= 10
+]

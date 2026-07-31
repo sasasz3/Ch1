@@ -1,0 +1,251 @@
+library(data.table)
+library(readxl)
+library(lubridate)
+library(stringr)
+library(fixest)
+library(ggplot2)
+library(DescTools)
+
+
+# DESCRIPTIVE STATISTICS
+
+dataset_overview <- function(DT, dataset_name) {
+  
+  data.table(
+    Dataset = dataset_name,
+    Observations = nrow(DT),
+    Unique_Firms = uniqueN(DT$gvkey),
+    First_Date = min(DT$original_date),
+    Last_Date = max(DT$original_date)
+  )
+}
+
+overview_table <- rbindlist(list(
+  
+  dataset_overview(
+    layoff_events,
+    "Layoffs"
+  ),
+  
+  dataset_overview(
+    buyback_events,
+    "Buybacks"
+  ),
+  
+  dataset_overview(
+    earnings_events,
+    "Earnings"
+  )
+  
+))
+
+print(overview_table)
+
+
+
+
+# EVENT FREQUENCY PER FIRM
+
+event_frequency_summary <- function(DT, dataset_name) {
+  
+  firm_events <- DT[
+    ,
+    .(events = .N),
+    by = gvkey
+  ]
+  
+  data.table(
+    Dataset = dataset_name,
+    Firms = nrow(firm_events),
+    Firms_One_Event = sum(firm_events$events == 1),
+    Mean_Events = round(mean(firm_events$events), 2),
+    Median_Events = median(firm_events$events),
+    P25 = unname(quantile(firm_events$events, 0.25)),
+    P75 = unname(quantile(firm_events$events, 0.75)),
+    SD_Events = round(sd(firm_events$events), 2),
+    Min_Events = min(firm_events$events),
+    Max_Events = max(firm_events$events)
+  )
+}
+
+event_frequency_table <- rbindlist(list(
+  
+  event_frequency_summary(
+    layoff_events,
+    "Layoffs"
+  ),
+  
+  event_frequency_summary(
+    buyback_events,
+    "Buybacks"
+  ),
+  
+  event_frequency_summary(
+    earnings_events,
+    "Earnings"
+  )
+  
+))
+
+print(event_frequency_table)
+
+
+
+
+# CHECK YEARLY FREQUENCY OF EVENTS
+
+layoff_events[, year := year(original_date)]
+buyback_events[, year := year(original_date)]
+earnings_events[, year := year(original_date)]
+
+
+layoff_yearly <- layoff_events[
+  ,
+  .(Layoffs = .N),
+  by = year
+]
+
+buyback_yearly <- buyback_events[
+  ,
+  .(Buybacks = .N),
+  by = year
+]
+
+earnings_yearly <- earnings_events[
+  ,
+  .(Earnings = .N),
+  by = year
+]
+
+
+yearly_events <- data.table(
+  year = 2002:2025
+)
+
+yearly_events <- merge(
+  yearly_events,
+  layoff_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_events <- merge(
+  yearly_events,
+  buyback_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_events <- merge(
+  yearly_events,
+  earnings_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_events[is.na(Layoffs), Layoffs := 0]
+yearly_events[is.na(Buybacks), Buybacks := 0]
+yearly_events[is.na(Earnings), Earnings := 0]
+
+print(yearly_events)
+
+
+#=========================================================
+# UNIQUE FIRMS PER YEAR
+#=========================================================
+
+layoff_firms_yearly <- layoff_events[
+  ,
+  .(Layoff_Firms = uniqueN(gvkey)),
+  by = year
+]
+
+buyback_firms_yearly <- buyback_events[
+  ,
+  .(Buyback_Firms = uniqueN(gvkey)),
+  by = year
+]
+
+earnings_firms_yearly <- earnings_events[
+  ,
+  .(Earnings_Firms = uniqueN(gvkey)),
+  by = year
+]
+
+yearly_summary <- copy(yearly_events)
+
+yearly_summary <- merge(
+  yearly_summary,
+  layoff_firms_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_summary <- merge(
+  yearly_summary,
+  buyback_firms_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+yearly_summary <- merge(
+  yearly_summary,
+  earnings_firms_yearly,
+  by = "year",
+  all.x = TRUE
+)
+
+cols <- c(
+  "Layoff_Firms",
+  "Buyback_Firms",
+  "Earnings_Firms"
+)
+
+for (col in cols) {
+  yearly_summary[is.na(get(col)), (col) := 0]
+}
+
+print(yearly_summary)
+
+#=========================================================
+# FIRM OVERLAP
+#=========================================================
+
+layoff_firms <- unique(layoff_events$gvkey)
+buyback_firms <- unique(buyback_events$gvkey)
+earnings_firms <- unique(earnings_events$gvkey)
+
+both_firms <- intersect(layoff_firms, buyback_firms)
+
+layoff_only <- setdiff(layoff_firms, buyback_firms)
+
+buyback_only <- setdiff(buyback_firms, layoff_firms)
+
+neither <- setdiff(
+  earnings_firms,
+  union(layoff_firms, buyback_firms)
+)
+
+firm_overlap <- data.table(
+  
+  Category = c(
+    "Layoff firms",
+    "Buyback firms",
+    "Both layoff and buyback",
+    "Layoff only",
+    "Buyback only",
+    "Neither"
+  ),
+  
+  Firms = c(
+    length(layoff_firms),
+    length(buyback_firms),
+    length(both_firms),
+    length(layoff_only),
+    length(buyback_only),
+    length(neither)
+  )
+  
+)
+
+print(firm_overlap)
