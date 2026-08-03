@@ -88,29 +88,50 @@ link_table[, `:=`(
 link_table[is.na(linkenddt), linkenddt := as.Date("2026-12-31")]
 
 
-# CREATE TRADING DAY CALENDAR
-
-cal <- cal[!is.na(date)]
-cal <- unique(cal, by = "date")
-setorder(cal, date)
-
-# Create an integer trading-day index
-cal[, t_index := .I]
-
-# Use explicit names to avoid confusion in later joins
-trading_calendar <- cal[, .(
-  trading_date = date,
-  t_index
-)]
-
-setkey(trading_calendar, trading_date)
 
 
+# ============================================================
+# CREATE FULL CALENDAR-DAY CALENDAR
+# ============================================================
+
+calendar_start <- as.Date("2002-01-01")
+calendar_end   <- as.Date("2025-12-31")
+
+calendar <- data.table(
+  calendar_date = seq.Date(
+    from = calendar_start,
+    to = calendar_end,
+    by = "day"
+  )
+)
+
+# Sequential calendar-day index
+calendar[
+  ,
+   t_index := .I
+]
+
+# Optional date information
+calendar[
+  ,
+  `:=`(
+    calendar_year = year(calendar_date),
+    calendar_month = month(calendar_date),
+    calendar_day = day(calendar_date),
+    weekday = weekdays(calendar_date),
+    is_weekend = wday(calendar_date) %in% c(1L, 7L)
+  )
+]
+
+setkey(calendar, calendar_date)
 
 
-# MAP EVENTS TO THE NEXT AVAILABLE TRADING DAY
 
-map_to_trading_day <- function(DT, event_name) {
+# ============================================================
+# MAP EVENTS TO THEIR ACTUAL CALENDAR DATES
+# ============================================================
+
+map_to_calendar <- function(DT, event_name) {
   
   events <- copy(
     DT[
@@ -120,71 +141,53 @@ map_to_trading_day <- function(DT, event_name) {
     ]
   )
   
-  # Preserve the original reported event date
-  setnames(events, "date", "original_date")
-  
-  # Position of the next trading day:
-  # findInterval gives the number of trading dates strictly before
-  # or equal to the adjusted date.
-  events[, calendar_position :=
-           findInterval(
-             original_date - 1,
-             trading_calendar$trading_date
-           ) + 1L
-  ]
-  
-  # Events after the end of the calendar cannot be mapped
-  events[
-    calendar_position > nrow(trading_calendar),
-    calendar_position := NA_integer_
-  ]
-  
-  # Attach the matched trading date and index
-  events[
-    !is.na(calendar_position),
-    `:=`(
-      trading_date =
-        trading_calendar$trading_date[calendar_position],
-      
-      t_index =
-        trading_calendar$t_index[calendar_position]
-    )
-  ]
-  
-  # Ensure unmatched observations have correctly typed missing values
-  events[
-    is.na(calendar_position),
-    `:=`(
-      trading_date = as.Date(NA),
-      t_index = NA_integer_
-    )
-  ]
-  
-  events[, event_type := event_name]
+  # Preserve the reported date
+  setnames(
+    events,
+    "date",
+    "calendar_date"
+  )
   
   events[
     ,
-    shifted_to_trading_day :=
-      !is.na(trading_date) &
-      original_date != trading_date
+    calendar_date := as.Date(calendar_date)
   ]
   
   events[
     ,
-    calendar_days_shifted :=
-      as.integer(trading_date - original_date)
+    event_type := event_name
   ]
   
-  events[, calendar_position := NULL]
+  # Attach the corresponding calendar-day index
+  events <- merge(
+    events,
+    calendar[
+      ,
+      .(
+        calendar_date = calendar_date,
+        t_index,
+        calendar_year,
+        calendar_month,
+        calendar_day,
+        weekday,
+        is_weekend
+      )
+    ],
+    by = "calendar_date",
+    all.x = TRUE,
+    sort = FALSE
+  )
   
   first_columns <- c(
     "gvkey",
     "event_type",
-    "original_date",
-    "trading_date",
+    "calendar_date",
     "t_index",
-    "shifted_to_trading_day",
-    "calendar_days_shifted"
+    "calendar_year",
+    "calendar_month",
+    "calendar_day",
+    "weekday",
+    "is_weekend"
   )
   
   setcolorder(
@@ -195,23 +198,27 @@ map_to_trading_day <- function(DT, event_name) {
     )
   )
   
-  setorder(events, gvkey, original_date)
+  setorder(
+    events,
+    gvkey,
+    calendar_date
+  )
   
   events[]
 }
 
 
-layoff_events <- map_to_trading_day(
+layoff_events <- map_to_calendar(
   layoffs,
   "Layoff"
 )
 
-buyback_events <- map_to_trading_day(
+buyback_events <- map_to_calendar(
   sdc,
   "Buyback"
 )
 
-earnings_events <- map_to_trading_day(
+earnings_events <- map_to_calendar(
   earnings,
   "Earnings"
 )
