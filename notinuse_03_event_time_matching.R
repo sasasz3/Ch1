@@ -30,8 +30,7 @@ layoffs_match <- layoffs_match[
   ,
   .(
     gvkey,
-    layoff_original_date = original_date,
-    layoff_trading_date = trading_date,
+    layoff_date = calendar_date,
     layoff_t_index = t_index
   )
 ]
@@ -63,8 +62,7 @@ buybacks_match <- buybacks_match[
   ,
   .(
     gvkey,
-    buyback_original_date = original_date,
-    buyback_trading_date = trading_date,
+    buyback_date = calendar_date,
     
     # Preserve the true buyback trading-day index
     buyback_t_index = t_index
@@ -75,6 +73,10 @@ buybacks_match[
   ,
   buyback_id := .I
 ]
+
+
+
+
 
 # Separate key used only for the non-equi join.
 # This prevents data.table from replacing the original index
@@ -102,12 +104,10 @@ layoff_buyback_pairs <- buybacks_match[
     buyback_id = x.buyback_id,
     gvkey = i.gvkey,
     
-    layoff_original_date = i.layoff_original_date,
-    layoff_trading_date = i.layoff_trading_date,
+    layoff_date = i.layoff_date,
     layoff_t_index = i.layoff_t_index,
     
-    buyback_original_date = x.buyback_original_date,
-    buyback_trading_date = x.buyback_trading_date,
+    buyback_date = x.buyback_date,
     
     # Explicitly retrieve the preserved index from the buyback table
     buyback_t_index = x.buyback_t_index
@@ -126,7 +126,7 @@ setorder(
   layoff_buyback_pairs,
   layoff_id,
   distance,
-  buyback_original_date,
+  buyback_date,
   buyback_id
 )
 
@@ -190,8 +190,7 @@ layoff_event_time <- merge(
     .(
       layoff_id,
       gvkey,
-      layoff_original_date,
-      layoff_trading_date,
+      layoff_date,
       layoff_t_index
     )
   ],

@@ -15,8 +15,8 @@ dataset_overview <- function(DT, dataset_name) {
     Dataset = dataset_name,
     Observations = nrow(DT),
     Unique_Firms = uniqueN(DT$gvkey),
-    First_Date = min(DT$original_date),
-    Last_Date = max(DT$original_date)
+    First_Date = min(DT$calendar_date),
+    Last_Date = max(DT$calendar_date)
   )
 }
 
@@ -94,9 +94,9 @@ print(event_frequency_table)
 
 # CHECK YEARLY FREQUENCY OF EVENTS
 
-layoff_events[, year := year(original_date)]
-buyback_events[, year := year(original_date)]
-earnings_events[, year := year(original_date)]
+layoff_events[, year := year(calendar_date)]
+buyback_events[, year := year(calendar_date)]
+earnings_events[, year := year(calendar_date)]
 
 
 layoff_yearly <- layoff_events[
@@ -150,9 +150,9 @@ yearly_events[is.na(Earnings), Earnings := 0]
 print(yearly_events)
 
 
-#=========================================================
+
 # UNIQUE FIRMS PER YEAR
-#=========================================================
+
 
 layoff_firms_yearly <- layoff_events[
   ,
