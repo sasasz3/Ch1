@@ -1,6 +1,10 @@
 import pandas as pd
-import re
 from config import DATA_FOLDER
+
+
+# FILE TO FILTER CAPIQ FOR VALIDATED NON-LAYOFF EVENTS
+# AND FILTER OUT DUPLICATE EVENTS IN A 60-DAY WINDOW FROM INITIAL EVENT
+
 
 INPUT_FILE = DATA_FOLDER / "capitaliq_cleaned.xlsx"
 OUTPUT_FILE = DATA_FOLDER / "capitaliq_filtered.xlsx"
@@ -53,11 +57,13 @@ df_final = df_valid.groupby('gvkey', as_index=False, group_keys=False).apply(rol
 
 #reset index
 df_final = df_final.reset_index(drop=True)
+unique_firms = df_final["gvkey"].nunique()
 
 #print stuff
 print("\n" + "=" * 30)
 print(f"Total Valid Rows: {total_before}")
 print(f"Final Unique Events: {len(df_final)}")
+print(f"Unique Firms: {unique_firms:,}")
 print("=" * 30)
 
 

@@ -3,27 +3,30 @@ import re
 from config import DATA_FOLDER
 
 
+# FILE TO CLEAN THE CAPIQ DATASET FROM INVALID GVKEYS AND SIC CODES THAT ARE NOT NEEDED
+# AND IDENTIFY NON-LAYOFF EVENTS - TO BE REVIEWED MANUALLY
+
+
 INPUT_FILE = DATA_FOLDER / "capitaliq_raw.xlsx"
 OUTPUT_FILE = DATA_FOLDER / "capitaliq_cleaned.xlsx"
 
 
-#defining layoff-related keywords
+#DEFINING LAYOFF-RELATED KEYWORDS
 
-# DIRECT: All permutations of layoffs, downsizing, redundancies, RIF
+# direct: All permutations of layoffs, downsizing, redundancies and reduction in
 LAYOFF_DIRECT = r'\blay\w*[- ]?off\w*|downsiz\w*|redundan\w*|reduction\s?in\s?force|rif'
 
-# INDIRECT ACTION: Synonyms for cutting/losing
+# workforce reduction related action verbs
 ACTION_ROOTS = r'\b(?:reduc\w*|cut\w*|rightsiz\w*|eliminat\w*|terminat\w*|displac\w*|shed\w*|slash\w*|ax\w*|trim\w*|chop\w*|jettison\w*|let\w*\s?go|eras\w*|loss\w*|lose|put\s?out|fire\w*|drop\w*)\b'
 
-# WORKFORCE: Targets of the action (Includes team members)
+# synonyms for the term workforce
 WORKFORCE_ROOTS = r'\b(?:employ\w*|work\s?force|position\w*|colleague\w*|staff\w*|role\w*|job\w*|worker\w*|head\s?count|manpower|people|member\w*|dealer\w*|sales\s?force|hand\w*|personnel|team\s?member\w*)\b'
 
-# CLOSURE: Any permutation of "close"
+# closure related words
 CLOSE_VERBS = r'\bclos\w*\b'
 
 
 #implementation
-
 def classify_dataset(df):
 
     h = df['Key Development Headline'].fillna('').astype(str).str.lower()

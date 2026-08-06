@@ -1,12 +1,14 @@
 library(data.table)
 library(lubridate)
+library(readxl)
 
 source("config.R")
 
-capitaliq <- setDT(read_excel(file.path(DATA_FOLDER, "capitalIQ_raw.xlsx"), sheet = "Screening"))
+capitaliq <- setDT(read_excel(file.path(DATA_FOLDER, "capitaliq_filtered.xlsx")))
 compustat <- setDT(read_excel(file.path(DATA_FOLDER, "compustat.xlsx")))
 
-setnames(capitaliq, "Key Developments By Date", "calendar_date")
+
+setnames(capitaliq, "date", "calendar_date")
 setnames(capitaliq, "Company Name(s)", "company_name")
 
 capitaliq[, calendar_date := as.Date(calendar_date)]

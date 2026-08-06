@@ -7,6 +7,10 @@ from config import DATA_FOLDER
 import pandas as pd
 from rapidfuzz import fuzz
 
+#FILE TO MATCH THE (FIXED DATE) WARN DATA WITH COMPUSTAT
+#BASED ONLY ON COMPANY NAMES
+#ATTACH GVKEYS AND OTHER IDENTIFIERS TO ASSUMED MATCHES
+
 
 # load data
 WARN_FILE = DATA_FOLDER / "warn_data_date_fixed.csv"

@@ -2,6 +2,10 @@ import re
 import pandas as pd
 from config import DATA_FOLDER
 
+
+#FILE TO CLEAN THE MESSY WARN DATA BY TAKING MISPLACED DATES AND PUTTING INTO THE RIGHT COLUMN
+
+
 #load data
 INPUT_FILE = DATA_FOLDER / "warn-data - for process.csv"
 OUTPUT_FILE = DATA_FOLDER / "warn_data_date_fixed.csv"

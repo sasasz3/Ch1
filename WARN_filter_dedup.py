@@ -1,6 +1,9 @@
 import pandas as pd
 from config import DATA_FOLDER
 
+#FILES THE REMOVES THE PREVIOUSLY IDENTIFIED NO MATCH ROWS FROM WARN
+#OBSERVATIONS IN THE SAME MONTH ARE TREATED AS THE SAME ANNOUNCEMENT
+#COUNTS UNIQUE GVKEYS
 
 # load data
 INPUT_FILE = DATA_FOLDER / "warn_compustat_unfiltered.xlsx"
@@ -8,45 +11,21 @@ OUTPUT_FILE = DATA_FOLDER / "warn_compustat_filtered.xlsx"
 INPUT_SHEET = "warn_matched"
 
 
-#read input
-if not INPUT_FILE.exists():
-    raise FileNotFoundError(
-        f"Input file does not exist: {INPUT_FILE}"
-    )
-
-print("=" * 75)
-print("FILTERING AND DEDUPLICATION")
-print("=" * 75)
-print(f"Reading: {INPUT_FILE}")
-
 data = pd.read_excel(
     INPUT_FILE,
     sheet_name=INPUT_SHEET,
     engine="openpyxl",
     dtype={
         "Compustat_gvkey": str,
-    },
+    }
 )
 
+data = data.rename(columns=
+{
+    "Effective Date": "date",
+    "Compustat_gvkey": "gvkey",
+})
 
-# validate required columns
-required_columns = {
-    "Compustat_gvkey",
-    "Effective Date",
-    "Match_Category",
-}
-
-missing_columns = required_columns.difference(
-    data.columns
-)
-
-if missing_columns:
-    raise KeyError(
-        "The input workbook is missing these required columns: "
-        + ", ".join(
-            sorted(missing_columns)
-        )
-    )
 
 rows_original = len(data)
 
@@ -58,7 +37,7 @@ data["_original_row_order"] = range(
     len(data)
 )
 
-# Standardise category values only for filtering.
+# standardise category values only for filtering.
 data["_category_standardised"] = (
     data["Match_Category"]
     .astype("string")
@@ -66,18 +45,12 @@ data["_category_standardised"] = (
     .str.upper()
 )
 
-# Preserve gvkey as a string so leading zeroes are not lost.
-data["Compustat_gvkey"] = (
-    data["Compustat_gvkey"]
-    .astype("string")
-    .str.strip()
-)
 
 # Convert the date column into actual dates.
 # Invalid dates become NaT and will be retained without
 # participating in monthly deduplication.
-data["Effective Date"] = pd.to_datetime(
-    data["Effective Date"],
+data["date"] = pd.to_datetime(
+    data["date"],
     format="%d/%m/%Y",
     errors="coerce",
 )
@@ -114,25 +87,20 @@ print(
 
 
 #deduplication
-#create year-month calendar
-filtered_data["_calendar_month"] = (
-    filtered_data["Effective Date"]
-    .dt.to_period("M")
-)
+
 
 # Identify valid gvkeys.
 valid_gvkey = (
-    filtered_data["Compustat_gvkey"].notna()
-    & filtered_data["Compustat_gvkey"].ne("")
-    & filtered_data["Compustat_gvkey"].ne("<NA>")
-    & filtered_data["Compustat_gvkey"].str.lower().ne("nan")
+    filtered_data["gvkey"].notna()
+    & filtered_data["gvkey"].ne("")
+    & filtered_data["gvkey"].ne("<NA>")
+    & filtered_data["gvkey"].str.lower().ne("nan")
 )
 
-# Only rows with both a valid gvkey and valid date can be
-# included in monthly duplicate groups.
+# eligibility for deduplication valid gvkey valid date
 eligible_for_deduplication = (
     valid_gvkey
-    & filtered_data["Effective Date"].notna()
+    & filtered_data["date"].notna()
 )
 
 eligible_data = (
@@ -142,38 +110,47 @@ eligible_data = (
     .copy()
 )
 
-
-#remove same gvkey same month duplicates
-# Sort each gvkey-month group so its earliest date is first.
-# If two observations have the same earliest date, the one that
-# appeared first in the input workbook is retained.
+# Sort chronologically within each firm.
+# Original row order breaks ties where dates are identical.
 eligible_data = eligible_data.sort_values(
     by=[
-        "Compustat_gvkey",
-        "_calendar_month",
-        "Effective Date",
+        "gvkey",
+        "date",
         "_original_row_order",
     ],
     ascending=[
         True,
         True,
         True,
-        True,
     ],
 )
 
-duplicate_mask = eligible_data.duplicated(
-    subset=[
-        "Compustat_gvkey",
-        "_calendar_month",
-    ],
-    keep="first",
-)
+indexes_to_keep = []
 
-duplicate_indexes_to_remove = (
-    eligible_data.loc[
-        duplicate_mask
-    ].index
+# Apply a 60-calendar-day blackout from the most recently
+# retained event for each GVKEY.
+for gvkey, group in eligible_data.groupby(
+    "gvkey",
+    sort=False,
+):
+    last_retained_date = None
+
+    for row_index, row in group.iterrows():
+        current_date = row["date"]
+
+        if (
+            last_retained_date is None
+            or (current_date - last_retained_date).days > 60
+        ):
+            indexes_to_keep.append(row_index)
+            last_retained_date = current_date
+
+# Remove eligible observations that were not retained.
+eligible_indexes = set(eligible_data.index)
+kept_indexes = set(indexes_to_keep)
+
+duplicate_indexes_to_remove = list(
+    eligible_indexes - kept_indexes
 )
 
 duplicate_rows_removed = len(
@@ -184,7 +161,7 @@ filtered_data = filtered_data.drop(
     index=duplicate_indexes_to_remove
 )
 
-# Restore the retained observations to their original order.
+# Restore retained observations to their original input order.
 filtered_data = (
     filtered_data
     .sort_values("_original_row_order")
@@ -194,14 +171,14 @@ filtered_data = (
 rows_final = len(filtered_data)
 
 print(
-    f"Duplicate gvkey-month rows removed: "
+    f"Rows removed by 60-day blackout: "
     f"{duplicate_rows_removed:,}"
 )
 
 print(
-    f"Final rows retained: {rows_final:,}"
+    f"Final rows retained: "
+    f"{rows_final:,}"
 )
-
 
 # ============================================================
 # FINAL ROW COUNTS
@@ -251,10 +228,10 @@ other_rows = int(
 # gvkey counts
 
 final_valid_gvkey = (
-    filtered_data["Compustat_gvkey"].notna()
-    & filtered_data["Compustat_gvkey"].ne("")
-    & filtered_data["Compustat_gvkey"].ne("<NA>")
-    & filtered_data["Compustat_gvkey"].str.lower().ne("nan")
+    filtered_data["gvkey"].notna()
+    & filtered_data["gvkey"].ne("")
+    & filtered_data["gvkey"].ne("<NA>")
+    & filtered_data["gvkey"].str.lower().ne("nan")
 )
 
 matched_with_gvkey = (
@@ -288,7 +265,7 @@ def classify_gvkey(categories):
 
 gvkey_categories = (
     matched_with_gvkey
-    .groupby("Compustat_gvkey")[
+    .groupby("gvkey")[
         "Match_Category"
     ]
     .apply(classify_gvkey)
@@ -312,7 +289,6 @@ total_unique_gvkeys = int(
 
 
 # gvkey audit
-
 gvkey_summary = (
     gvkey_categories
     .rename("final_gvkey_category")
@@ -321,7 +297,7 @@ gvkey_summary = (
 
 gvkey_row_counts = (
     matched_with_gvkey
-    .groupby("Compustat_gvkey")
+    .groupby("gvkey")
     .size()
     .rename("retained_layoff_rows")
     .reset_index()
@@ -329,7 +305,7 @@ gvkey_row_counts = (
 
 gvkey_first_date = (
     matched_with_gvkey
-    .groupby("Compustat_gvkey")["Effective Date"]
+    .groupby("gvkey")["date"]
     .min()
     .rename("first_retained_date")
     .reset_index()
@@ -337,7 +313,7 @@ gvkey_first_date = (
 
 gvkey_last_date = (
     matched_with_gvkey
-    .groupby("Compustat_gvkey")["Effective Date"]
+    .groupby("gvkey")["date"]
     .max()
     .rename("last_retained_date")
     .reset_index()
@@ -345,19 +321,19 @@ gvkey_last_date = (
 
 gvkey_summary = gvkey_summary.merge(
     gvkey_row_counts,
-    on="Compustat_gvkey",
+    on="gvkey",
     how="left",
 )
 
 gvkey_summary = gvkey_summary.merge(
     gvkey_first_date,
-    on="Compustat_gvkey",
+    on="gvkey",
     how="left",
 )
 
 gvkey_summary = gvkey_summary.merge(
     gvkey_last_date,
-    on="Compustat_gvkey",
+    on="gvkey",
     how="left",
 )
 
@@ -403,7 +379,6 @@ filtered_data = filtered_data.drop(
     columns=[
         "_original_row_order",
         "_category_standardised",
-        "_calendar_month",
     ]
 )
 
@@ -421,18 +396,6 @@ with pd.ExcelWriter(
     filtered_data.to_excel(
         writer,
         sheet_name="layoffs",
-        index=False,
-    )
-
-    processing_summary.to_excel(
-        writer,
-        sheet_name="processing_summary",
-        index=False,
-    )
-
-    gvkey_summary.to_excel(
-        writer,
-        sheet_name="gvkey_summary",
         index=False,
     )
 
