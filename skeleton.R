@@ -37,39 +37,5 @@ fiscal_year_map_public <- fiscal_year_map_public[
     consol == "C"
 ]
 
-# ============================================================
-# CREATE PUBLIC-COMPANY PANEL
-# ============================================================
 
-panel <- copy(
-  fiscal_year_map_public[
-    fiscal_year >= 2002L &
-      fiscal_year <= 2025L &
-      exchg != 0
-  ]
-)
 
-setorder(
-  panel,
-  gvkey,
-  fiscal_year
-)
-
-# Check uniqueness
-panel[
-  ,
-  .N,
-  by = .(gvkey, fiscal_year)
-][N > 1L]
-
-# Summary
-panel[
-  ,
-  .(
-    observations = .N,
-    firms = uniqueN(gvkey),
-    first_fiscal_year = min(fiscal_year),
-    last_fiscal_year = max(fiscal_year),
-    mean_years_per_firm = round(.N / uniqueN(gvkey), 2)
-  )
-]

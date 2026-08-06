@@ -76,9 +76,9 @@ lapply(tables_with_date, function(x) x[, date := as.Date(date)])
 
 # Restrict earnings announcements to the study period
 earnings <- earnings[
-  !is.na(date) &
-    date >= as.Date("2002-01-01") &
-    date <= as.Date("2025-12-31")
+  !is.na(datadate) &
+    datadate >= as.Date("2002-01-01") &
+    datadate <= as.Date("2025-12-31")
 ]
 
 link_table[, `:=`(
