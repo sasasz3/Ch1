@@ -12,7 +12,7 @@ OUTPUT_FILE = DATA_FOLDER / "capitaliq_filtered.xlsx"
 df = pd.read_excel(INPUT_FILE, dtype={"gvkey": str})
 
 #rename stupid column
-df = df.rename(columns={"Key Developments By Date": "date"})
+df = df.rename(columns={"Key Developments By Date": "date", "SIC Codes": "sic",})
 
 
 #get rid of the previously identified non-layoff events
@@ -67,7 +67,7 @@ print(f"Unique Firms: {unique_firms:,}")
 print("=" * 30)
 
 
-
+df_final = df_final.drop(columns=["date_dt"])
 df_final.to_excel(OUTPUT_FILE, index=False, engine='openpyxl')
 
 print(f"Done! Check '{OUTPUT_FILE}'.")

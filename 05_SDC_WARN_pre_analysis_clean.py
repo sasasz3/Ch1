@@ -8,67 +8,49 @@ from config import DATA_FOLDER
 #
 
 #load data
-REPURCHASES_INPUT = DATA_FOLDER / "sdc_data_filtered.xlsx"
-
-
-LAYOFFS_INPUT = DATA_FOLDER  / "warn_compustat_filtered.xlsx"
-
-
-REPURCHASES_OUTPUT = DATA_FOLDER / "repurchases_data_final.xlsx"
-
-
-LAYOFFS_OUTPUT =  DATA_FOLDER / "layoffs_data_final.xlsx"
+SDC_INPUT = DATA_FOLDER / "sdc_data_filtered.xlsx"
+SDC_OUTPUT = DATA_FOLDER / "sdc_data_final.xlsx"
+WARN_INPUT = DATA_FOLDER  / "warn_compustat_filtered.xlsx"
+WARN_OUTPUT =  DATA_FOLDER / "warn_data_final.xlsx"
+CAPIQ_INPUT = DATA_FOLDER / "capitaliq_filtered.xlsx"
+CAPIQ_OUTPUT =  DATA_FOLDER / "capitaliq_data_final.xlsx"
 
 
 
 # standardise date format
-EXCEL_DATE_FORMAT = "yyyy-mm-dd"
+DATE_FORMAT = "yyyy-mm-dd"
 
 
 #standardise column names
 def standardise_column_name(value):
-    """
-    Convert a column name to lowercase and standardise the
-    gvkey and date names.
-    """
     if value is None:
         return None
 
     column_name = str(value).strip().lower()
 
-    # Replace line breaks and repeated whitespace with one space.
+    # replace line breaks and repeated whitespace with one space.
     column_name = " ".join(
         column_name.split()
     )
 
-    gvkey_names = {
-        "gvkey",
-        "compustat_gvkey",
+
+    #this will be deleted later once i write the proper gvkey matching py file to sdc
+    rename_map = {
+        "date announced": "date",
     }
-
-    if column_name in gvkey_names:
-        return "gvkey"
-
-    date_names = {
-        "date announced",
-        "effective date",
-    }
-
-    if column_name in date_names:
-        return "date"
-
+    column_name = rename_map.get(
+        column_name,
+        column_name
+    )
     return column_name
 
-#standardise dates
+
+#standardise dates from all possible forms
 def convert_to_excel_date(
     value,
     workbook_epoch,
 ):
-    """
-    Convert a cell value into a Python datetime at midnight.
 
-    Unrecognised values return None and remain unchanged.
-    """
     if value is None or value == "":
         return None
 
@@ -114,7 +96,7 @@ def convert_to_excel_date(
         except (TypeError, ValueError, OverflowError):
             return None
 
-    # Handle date strings.
+    # handle date strings.
     try:
         converted = pd.to_datetime(
             value,
@@ -147,10 +129,7 @@ def standardise_date_column(
     column_number,
     workbook_epoch,
 ):
-    """
-    Convert all valid observations in one date column into
-    Excel dates displayed as YYYY-MM-DD.
-    """
+
     converted_count = 0
     blank_count = 0
     unrecognised_count = 0
@@ -189,7 +168,7 @@ def standardise_date_column(
             continue
 
         cell.value = converted_value
-        cell.number_format = EXCEL_DATE_FORMAT
+        cell.number_format = DATE_FORMAT
 
         converted_count += 1
 
@@ -201,24 +180,10 @@ def standardise_date_column(
 
 
 #execute in workbook
-
 def standardise_workbook(
     input_file,
     output_file,
 ):
-    """
-    Standardise all first-row column names and every column
-    whose resulting name is 'date'.
-    """
-    if not input_file.exists():
-        raise FileNotFoundError(
-            f"Input file does not exist: {input_file}"
-        )
-
-    print()
-    print("=" * 75)
-    print(f"Loading: {input_file.name}")
-    print("=" * 75)
 
     workbook = load_workbook(
         input_file
@@ -237,7 +202,7 @@ def standardise_workbook(
         date_column_numbers = []
         changed_columns = []
 
-        # Standardise all headers in row 1.
+        # standardise all headers in row 1.
         for cell in worksheet[1]:
             original_name = cell.value
 
@@ -261,7 +226,7 @@ def standardise_workbook(
                 cell.value = standardised_name
                 total_headers_changed += 1
 
-            # Detect the standardized date column.
+            # detect the standardized date column.
             if standardised_name == "date":
                 date_column_numbers.append(
                     cell.column
@@ -320,40 +285,25 @@ def standardise_workbook(
     }
 
 
-# ============================================================
-# PROCESS REPURCHASES
-# ============================================================
 
-repurchases_result = standardise_workbook(
-    input_file=REPURCHASES_INPUT,
-    output_file=REPURCHASES_OUTPUT,
+sdc_result = standardise_workbook(
+    input_file=SDC_INPUT,
+    output_file=SDC_OUTPUT,
 )
 
-
-# ============================================================
-# PROCESS LAYOFFS
-# ============================================================
-
-layoffs_result = standardise_workbook(
-    input_file=LAYOFFS_INPUT,
-    output_file=LAYOFFS_OUTPUT,
+warn_result = standardise_workbook(
+    input_file=WARN_INPUT,
+    output_file=WARN_OUTPUT,
 )
 
+capiq_result = standardise_workbook(
+    input_file=CAPIQ_INPUT,
+    output_file=CAPIQ_OUTPUT,
+)
 
-# ============================================================
-# FINAL SUMMARY
-# ============================================================
 
 print()
-print("=" * 75)
 print("STANDARDISATION COMPLETED")
-print("=" * 75)
-print(
-    f"Repurchases output: "
-    f"{repurchases_result['output_file']}"
-)
-print(
-    f"Layoffs output:     "
-    f"{layoffs_result['output_file']}"
-)
-print("=" * 75)
+print( f"SDC output: " f"{sdc_result['output_file']}")
+print( f"WARN output:     " f"{warn_result['output_file']}")
+print( f"CAPIQ output:     " f"{capiq_result['output_file']}")
