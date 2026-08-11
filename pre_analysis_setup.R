@@ -10,15 +10,18 @@ source("config.R")
 #import data: capiq, warn, sdc and fiscal year calendar (later controls)
 warn <- setDT(read_excel(file.path(DATA_FOLDER, "warn_data_final.xlsx")))
 warn[, gvkey := as.character(gvkey)]
+warn[, date := as.Date(date)]
 
 capiq <- setDT(read_excel(file.path(DATA_FOLDER, "capitaliq_data_final.xlsx")))
 capiq[, gvkey := as.character(gvkey)]
+capiq[, date := as.Date(date)]
 
 sdc <- setDT(read_excel(file.path(DATA_FOLDER, "sdc_data_final.xlsx"),sheet = "sdc"))
 sdc[, gvkey := as.character(gvkey)]
+sdc[, date := as.Date(date)]
 
 
-#export union of all unique gvkeys
+#unique gvkeys in each dataset
 warn_gvkeys  <- unique(warn[!is.na(gvkey), gvkey])
 capiq_gvkeys <- unique(capiq[!is.na(gvkey), gvkey])
 sdc_gvkeys <- unique(sdc[!is.na(gvkey), gvkey])
@@ -28,16 +31,14 @@ all_layoff_gvkeys <- union(warn_gvkeys, capiq_gvkeys)
 all_gvkeys <- union(all_layoff_gvkeys, sdc_gvkeys)
 scd_layoff_intersect <- intersect(sdc_gvkeys, all_layoff_gvkeys)
 
+#export union of all gvkeys
+#to be used to generate the fiscal year map by downloading compustat fiscal years for the below given set
+writeLines(sort(all_gvkeys), file.path(DATA_FOLDER, "all_gvkeys_for_compustat.txt"))
+
 # create event objects w/ valid dates
 warn_events <- unique(warn[,.(gvkey, date)])
 capiq_events <- unique(capiq[,.(gvkey, date)])
 sdc_events <- unique(sdc[,.(gvkey, date)])
-
-warn_events[, date := as.Date(date)]
-capiq_events[, date := as.Date(date)]
-sdc_events[, date := as.Date(date)]
-
-
 
 
 
@@ -62,58 +63,23 @@ fix_gvkey <- function(DT) {
 }
 fix_gvkey(fiscal_year_map)
 
+fiscal_year_map[, datadate := as.Date(datadate)]
 
-#create fiscal year map 
-#create start dates for each gvkey each fiscal year based on compustat logic
-fiscal_year_map[
-  fyr <= 5,
-  calendar_start := make_date(
-    year = fyear,
-    month = fyr + 1L,
-    day = 1
-  )
-]
+#create fiscal year map for general observations
+setorder(fiscal_year_map, gvkey, datadate)
+fiscal_year_map[ ,calendar_end := datadate]
+fiscal_year_map[, calendar_start := shift(calendar_end) + days(1), by = gvkey]
 
-fiscal_year_map[
-  fyr >= 6 & fyr <= 11,
-  calendar_start := make_date(
-    year = fyear - 1L,
-    month = fyr + 1L,
-    day = 1
-  )
-]
-
-fiscal_year_map[
-  fyr == 12,
-  calendar_start := make_date(
-    year = fyear,
-    month = 1,
-    day = 1
-  )
-]
-
-
-#create end dates for each fiscal year based on compustat logic
-fiscal_year_map[, end_year := fifelse( fyr <= 5,fyear + 1L,fyear)]
-
-#set temp date to calculate the month end date 
-fiscal_year_map[,end_month_start := make_date( year = end_year,month = fyr,day = 1)]
-
-# returns first day of next month then subtracts one day
-fiscal_year_map[,calendar_end := ceiling_date(end_month_start,unit = "month") - days(1)]
-
-fiscal_year_map[
-  ,
-  c("end_year", "end_month_start") := NULL
+# fill calendar_start for first observation of each firm
+fiscal_year_map[ is.na(calendar_start),
+  calendar_start := (datadate %m-% years(1)) + days(1)
 ]
 
 
 
-fiscal_year_map[, calendar_start := as.Date(calendar_start)]
-fiscal_year_map[, calendar_end := as.Date(calendar_end)]
 
 
-#function to attach fiscal year 
+#function to attach fiscal year to events
 attach_fyear <- function(events, fiscal_map) {
   
   result <- fiscal_map[
@@ -157,8 +123,6 @@ buyback_firms <- unique(sdc_events$gvkey)
 
 
 
-
-
 #create fimr-year observation objects
 warn_firm_years <- unique( warn_events[, .(gvkey, fyear)])
 capiq_firm_years <- unique( capiq_events[, .(gvkey, fyear)])
@@ -182,59 +146,48 @@ same_fy_overlap_firms <- unique( layoff_buyback_fy_intersect$gvkey)
 
 
 
-buyback_fy <- unique(sdc_events[,.(gvkey, fyear)])
-buyback_fy[, is_buyback := 1L]
-
-layoff_fy <- unique(layoff_events[ ,.(gvkey, fyear)])
-layoff_fy[, is_layoff := 1L]
 
 
-
-#create panel
+#create panel 
 panel <- copy(fiscal_year_map)
 
+# Keep one row per gvkey-fyear
+panel <- unique( panel, by = c("gvkey", "fyear"))
+
+#attach buyback events to panel
+buyback_indicator <- copy(buyback_firm_years)
+
+buyback_indicator[ , is_buyback := 1L]
+
 panel <- merge(
   panel,
-  buyback_fy,
+  buyback_indicator,
   by = c("gvkey", "fyear"),
   all.x = TRUE
 )
 
-panel[
-  is.na(is_buyback),
-  is_buyback := 0L
-]
+# Firm-years without a buyback become zero
+panel[ is.na(is_buyback), is_buyback := 0L]
 
+
+#attach layoff events to panel
+layoff_indicator <- copy(layoff_firm_years)
+
+layoff_indicator[ ,is_layoff := 1L]
 
 panel <- merge(
   panel,
-  layoff_fy,
+  layoff_indicator,
   by = c("gvkey", "fyear"),
   all.x = TRUE
 )
 
-panel[
-  is.na(is_layoff),
-  is_layoff := 0L
-]
+# Firm-years without a layoff become zero
+panel[ is.na(is_layoff), is_layoff := 0L]
 
 
-#firm-year audit 
-cat( "Buyback firm-years:", panel[is_buyback == 1, .N], "\n")
-
-cat("Layoff firm-years:", panel[is_layoff == 1, .N], "\n")
-
-cat("Both:",panel[ is_buyback == 1 & is_layoff == 1, .N], "\n")
 
 
-# removing firm-years where the company was not listed 
-cat("Panel rows before EXCHG filter:", nrow(panel), "\n")
-cat("Unique firms before filter:", uniqueN(panel$gvkey), "\n")
-
-panel <- panel[exchg != 0]
-
-cat("Panel rows after EXCHG filter:", nrow(panel), "\n")
-cat("Unique firms after filter:", uniqueN(panel$gvkey), "\n")
 
 
 
