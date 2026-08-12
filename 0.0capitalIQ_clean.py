@@ -11,6 +11,7 @@ INPUT_FILE = DATA_FOLDER / "capitaliq_raw.xlsx"
 OUTPUT_FILE = DATA_FOLDER / "capitaliq_cleaned.xlsx"
 
 
+
 #DEFINING LAYOFF-RELATED KEYWORDS
 
 # direct: All permutations of layoffs, downsizing, redundancies and reduction in
