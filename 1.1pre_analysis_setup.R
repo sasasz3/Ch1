@@ -148,7 +148,7 @@ same_fy_overlap_firms <- unique( layoff_buyback_fy_intersect$gvkey)
 
 
 
-#create panel 
+#CREATE PANEL
 panel <- copy(fiscal_year_map)
 
 # Keep one row per gvkey-fyear
@@ -182,12 +182,24 @@ panel <- merge(
   all.x = TRUE
 )
 
+
+#remove the gvkeys left in the panel by the unmatched events
+regression_panel_firms <- unique(panel$gvkey)
+panel_without_events <- setdiff( regression_panel_firms, all_event_firms)
+panel <- panel[!gvkey %in% panel_without_events]
+
+
+
 # Firm-years without a layoff become zero
 panel[ is.na(is_layoff), is_layoff := 0L]
 
+#remove fimr-years from panel where firm was not listed 
+panel <- panel[ !is.na(exchg) & exchg != 0]
 
+panel_firms <- unique(panel$gvkey)
 
-
+#save panel to reload in next step
+saveRDS( panel, file.path(DATA_FOLDER, "firm_fyear_panel.rds"))
 
 
 
