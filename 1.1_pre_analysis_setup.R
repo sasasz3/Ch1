@@ -20,13 +20,43 @@ sdc <- setDT(read_excel(file.path(DATA_FOLDER, "sdc_data_final.xlsx"),sheet = "s
 sdc[, gvkey := as.character(gvkey)]
 sdc[, date := as.Date(date)]
 
+compustat <- setDT(read_excel(file.path(DATA_FOLDER, "compustat.xlsx")))
+
+#column header cleaner functions
+clean_and_rename <- function(DT) {
+  current_names <- colnames(DT)
+  new_names <- gsub(".*\\((.*)\\).*", "\\1", current_names)
+  setnames(DT, current_names, new_names)}
+
+clean_and_rename(compustat)
+
+
+#fix gvkeys if compromised during loading
+fix_gvkey <- function(DT) {
+  if ("gvkey" %in% colnames(DT)) {
+    DT[, gvkey := str_pad(as.character(gvkey), width = 6, side = "left", pad = "0")]
+  }
+}
+fix_gvkey(compustat)
+
+compustat[, datadate := as.Date(datadate)]
+
 
 #unique gvkeys in each dataset
 warn_gvkeys  <- unique(warn[!is.na(gvkey), gvkey])
-capiq_gvkeys <- unique(capiq[!is.na(gvkey), gvkey])
 sdc_gvkeys <- unique(sdc[!is.na(gvkey), gvkey])
 
+#check if all capiq is present in the compustat universe for the set timehorizon
+#adjust set if not
+compustat_gvkeys <- unique(compustat$gvkey)
+capiq <- capiq[
+  gvkey %in% compustat_gvkeys
+]
 
+capiq_gvkeys <- unique(capiq[!is.na(gvkey), gvkey])
+
+
+#audit
 all_layoff_gvkeys <- union(warn_gvkeys, capiq_gvkeys)
 all_gvkeys <- union(all_layoff_gvkeys, sdc_gvkeys)
 scd_layoff_intersect <- intersect(sdc_gvkeys, all_layoff_gvkeys)
@@ -46,23 +76,9 @@ sdc_events <- unique(sdc[,.(gvkey, date)])
 
 fiscal_year_map <- setDT(read_excel(file.path(DATA_FOLDER, "fiscal_year_map.xlsx")))
 
-#clean column headers
-clean_and_rename <- function(DT) {
-current_names <- colnames(DT)
-new_names <- gsub(".*\\((.*)\\).*", "\\1", current_names)
-setnames(DT, current_names, new_names)}
 
 clean_and_rename(fiscal_year_map)
-
-
-#fix gvkeys if compromised during loading
-fix_gvkey <- function(DT) {
-  if ("gvkey" %in% colnames(DT)) {
-    DT[, gvkey := str_pad(as.character(gvkey), width = 6, side = "left", pad = "0")]
-  }
-}
 fix_gvkey(fiscal_year_map)
-
 fiscal_year_map[, datadate := as.Date(datadate)]
 
 #create fiscal year map for general observations
@@ -75,6 +91,7 @@ fiscal_year_map[ is.na(calendar_start),
   calendar_start := (datadate %m-% years(1)) + days(1)
 ]
 
+fiscal_year_gvkey <- unique(fiscal_year_map$gvkey)
 
 
 
@@ -105,54 +122,10 @@ warn_events <- attach_fyear(warn_events, fiscal_year_map)
 capiq_events <- attach_fyear(capiq_events, fiscal_year_map)
 sdc_events <- attach_fyear(sdc_events, fiscal_year_map)
 
-
-
-#dealing with the 2025 events that have no reported fiscal year in Compustat yet 
-last_fiscal_year <- fiscal_year_map[ , .SD[which.max(calendar_end)],
-                                     by = gvkey][ , .(
-    gvkey,
-    last_fyear = fyear,
-    last_calendar_end = calendar_end
-  )
-]
-
-
-assign_2026 <- function(events, last_fy) {
-  
-  events[
-    last_fy,
-    on = "gvkey",
-    `:=`(
-      last_fyear = i.last_fyear,
-      last_calendar_end = i.last_calendar_end
-    )
-  ]
-  
-  events[
-    is.na(fyear) &
-      year(date) == 2025 &
-      last_fyear == 2025 &
-      date > last_calendar_end,
-    fyear := 2026L
-  ]
-  
-  events[
-    ,
-    c("last_fyear", "last_calendar_end") := NULL
-  ]
-  
-  return(events)
-}
-
-#attach last fiscal years
-warn_events <- assign_2026( warn_events, last_fiscal_year)
-capiq_events <- assign_2026( capiq_events, last_fiscal_year)
-sdc_events <- assign_2026( sdc_events,last_fiscal_year)
-
-# remove everything that could not be matched 
 warn_unmatched_events <- warn_events[is.na(fyear)]
 capiq_unmatched_events <- capiq_events[is.na(fyear)]
 sdc_unmatched_events <- sdc_events[is.na(fyear)]
+
 
 warn_events <- warn_events[!is.na(fyear)]
 capiq_events <- capiq_events[!is.na(fyear)]
@@ -164,7 +137,7 @@ warn_firms <- unique(warn_events$gvkey)
 capiq_firms <- unique(capiq_events$gvkey)
 buyback_firms <- unique(sdc_events$gvkey)
 
-
+layoff_firms <- union(warn_firms, capiq_firms)
 
 #create fimr-year observation objects
 warn_firm_years <- unique( warn_events[, .(gvkey, fyear)])
@@ -226,20 +199,57 @@ panel <- merge(
 )
 
 
-#remove the gvkeys left in the panel by the unmatched events
-regression_panel_firms <- unique(panel$gvkey)
-panel_without_events <- setdiff( regression_panel_firms, all_event_firms)
-panel <- panel[!gvkey %in% panel_without_events]
-
-
-
 # Firm-years without a layoff become zero
 panel[ is.na(is_layoff), is_layoff := 0L]
 
-#remove fimr-years from panel where firm was not listed 
-panel <- panel[ !is.na(exchg) & exchg != 0]
 
 panel_firms <- unique(panel$gvkey)
+
+
+panel <- panel[ !is.na(exchg) & exchg != 0]
+panel_firms <- unique(panel$gvkey)
+
+#getting rid of those gvkeys that were in the compustat universe but without valid date
+panel_without_events <- setdiff(panel_firms, all_event_firms)
+panel <- panel[!gvkey %in% panel_without_events]
+
+panel_firms <- unique(panel$gvkey)
+
+
+
+
+
+panel_layoff_firms <- unique(panel[is_layoff == 1, gvkey])
+panel_buyback_firms <- unique(panel[is_buyback == 1, gvkey])
+panel_layoff_buyback_firms <- intersect( panel_layoff_firms, panel_buyback_firms)
+
+panel_layoff_firm_years <- unique(
+  panel[is_layoff == 1, .(gvkey, fyear)]
+)
+
+# Firm-years with at least one buyback
+panel_buyback_firm_years <- unique(
+  panel[is_buyback == 1, .(gvkey, fyear)]
+)
+
+
+panel_event_firm_years <- unique(
+  panel[
+    is_layoff == 1 | is_buyback == 1,
+    .(gvkey, fyear)
+  ]
+)
+
+# Firm-years with both
+panel_layoff_buyback_firm_years <- unique(
+  panel[
+    is_layoff == 1 & is_buyback == 1,
+    .(gvkey, fyear)
+  ]
+)
+
+
+
 
 #save panel to reload in next step
 saveRDS( panel, file.path(DATA_FOLDER, "firm_fyear_panel.rds"))
