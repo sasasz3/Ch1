@@ -9,10 +9,6 @@ setDT(panel)
 panel[, gvkey := as.character(gvkey)]
 
 
-panel <- panel[
-  fyear >= 2002 &
-    fyear <= 2025
-]
 
 setorder(panel, gvkey, fyear)
 
@@ -95,8 +91,8 @@ m_buyback_same_twfe <- feols(
   data = panel,
   cluster = ~gvkey
 )
-summary(m_buyback_same_twfe
-        )
+summary(m_buyback_same_twfe)
+
 m_layoff_same_twfe <- feols(
   is_layoff ~ is_buyback | gvkey + fyear,
   data = panel,

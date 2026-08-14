@@ -45,6 +45,7 @@ compustat[, datadate := as.Date(datadate)]
 #unique gvkeys in each dataset
 warn_gvkeys  <- unique(warn[!is.na(gvkey), gvkey])
 sdc_gvkeys <- unique(sdc[!is.na(gvkey), gvkey])
+capiq_gvkeys <- unique(capiq[!is.na(gvkey), gvkey])
 
 #check if all capiq is present in the compustat universe for the set timehorizon
 #adjust set if not
@@ -54,6 +55,8 @@ capiq <- capiq[
 ]
 
 capiq_gvkeys <- unique(capiq[!is.na(gvkey), gvkey])
+
+
 
 
 #audit
@@ -69,6 +72,7 @@ writeLines(sort(all_gvkeys), file.path(DATA_FOLDER, "all_gvkeys_for_compustat.tx
 warn_events <- unique(warn[,.(gvkey, date)])
 capiq_events <- unique(capiq[,.(gvkey, date)])
 sdc_events <- unique(sdc[,.(gvkey, date)])
+
 
 
 
@@ -130,6 +134,7 @@ sdc_unmatched_events <- sdc_events[is.na(fyear)]
 warn_events <- warn_events[!is.na(fyear)]
 capiq_events <- capiq_events[!is.na(fyear)]
 sdc_events <- sdc_events[!is.na(fyear)]
+
 
 
 #audit

@@ -201,26 +201,6 @@ panel[
 panel_controls <- panel[controls_complete == TRUE]
 
 
-#SAMEYEAR WITH CONTROLS 
-m_buyback_controls <- feols(
-  is_buyback ~
-    is_layoff +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    gvkey + fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-summary(m_buyback_controls)
-
-
-# ADD LAGGED VALUES AGAIN 
-# ============================================================
-# CREATE EVENT LAGS
-# ============================================================
 
 setorder(panel, gvkey, fyear)
 
@@ -254,8 +234,72 @@ panel_controls <- panel[
 
 
 
-#REGRESIION WITH LAGS AND CONTROLS 
-m_buyback_lag_controls <- feols(
+#PANEL A
+mA1_controls <- feols(
+  is_buyback ~
+    is_layoff +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+mA2_controls <- feols(
+  is_buyback ~
+    is_layoff +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book |
+    fyear,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+mA3_controls <- feols(
+  is_buyback ~
+    is_layoff +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book |
+    gvkey + fyear,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+#PANEL B
+mB1_controls <- feols(
+  is_buyback ~
+    lag_layoff +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+mB2_controls <- feols(
+  is_buyback ~
+    lag_layoff +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book |
+    fyear,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+mB3_controls <- feols(
   is_buyback ~
     lag_layoff +
     lag_size +
@@ -267,10 +311,74 @@ m_buyback_lag_controls <- feols(
   data = panel_controls,
   cluster = ~gvkey
 )
-summary(m_buyback_lag_controls)
+
+#PANEL C
+mC1_controls <- feols(
+  is_layoff ~
+    is_buyback +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+mC2_controls <- feols(
+  is_layoff ~
+    is_buyback +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book |
+    fyear,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+mC3_controls <- feols(
+  is_layoff ~
+    is_buyback +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book |
+    gvkey + fyear,
+  data = panel_controls,
+  cluster = ~gvkey
+)
 
 
-m_layoff_lag_controls <- feols(
+#PANEL D
+mD1_controls <- feols(
+  is_layoff ~
+    lag_buyback +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+mD2_controls <- feols(
+  is_layoff ~
+    lag_buyback +
+    lag_size +
+    lag_roa +
+    lag_leverage +
+    lag_cash_ratio +
+    lag_market_to_book |
+    fyear,
+  data = panel_controls,
+  cluster = ~gvkey
+)
+
+mD3_controls <- feols(
   is_layoff ~
     lag_buyback +
     lag_size +
@@ -282,4 +390,48 @@ m_layoff_lag_controls <- feols(
   data = panel_controls,
   cluster = ~gvkey
 )
-summary(m_layoff_lag_controls)
+
+etable(
+  mA1_controls,
+  mA2_controls,
+  mA3_controls,
+  headers = c(
+    "Pooled",
+    "Year FE",
+    "Firm + Year FE"
+  )
+)
+
+etable(
+  mB1_controls,
+  mB2_controls,
+  mB3_controls,
+  headers = c(
+    "Pooled",
+    "Year FE",
+    "Firm + Year FE"
+  )
+)
+
+etable(
+  mC1_controls,
+  mC2_controls,
+  mC3_controls,
+  headers = c(
+    "Pooled",
+    "Year FE",
+    "Firm + Year FE"
+  )
+)
+
+etable(
+  mD1_controls,
+  mD2_controls,
+  mD3_controls,
+  headers = c(
+    "Pooled",
+    "Year FE",
+    "Firm + Year FE"
+  )
+)
+

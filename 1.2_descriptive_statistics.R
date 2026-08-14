@@ -10,37 +10,7 @@ panel <- readRDS(
 
 setDT(panel)
 
-# Full constructed panel - retain for auditing
-panel_full <- copy(panel)
 
-
-# Main analysis sample
-panel <- panel[
-  fyear >= 2002 &
-    fyear <= 2025
-]
-
-
-#remove firms that were dropped because of the fiscal year restriction
-#and now feed into the data as 0-0s
-non_event_firms_restricted <- panel[
-  ,
-  .(
-    ever_event = any(
-      is_layoff == 1 |
-        is_buyback == 1
-    )
-  ),
-  by = gvkey
-][
-  ever_event == FALSE,
-  gvkey
-]
-
-# Remove them
-panel <- panel[
-  !gvkey %in% non_event_firms_restricted
-]
 
 #audits
 firm_years <- nrow(panel)
