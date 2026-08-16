@@ -6,6 +6,7 @@ library(fixest)
 library(DescTools)
 
 source("config.R")
+source("reusable_functions.R")
 
 #import data: capiq, warn, sdc and fiscal year calendar (later controls)
 warn <- setDT(read_excel(file.path(DATA_FOLDER, "warn_data_final.xlsx")))
@@ -23,46 +24,35 @@ sdc[, date := as.Date(date)]
 compustat <- setDT(read_excel(file.path(DATA_FOLDER, "compustat.xlsx")))
 
 #column header cleaner functions
-clean_and_rename <- function(DT) {
-  current_names <- colnames(DT)
-  new_names <- gsub(".*\\((.*)\\).*", "\\1", current_names)
-  setnames(DT, current_names, new_names)}
-
 clean_and_rename(compustat)
-
-
-#fix gvkeys if compromised during loading
-fix_gvkey <- function(DT) {
-  if ("gvkey" %in% colnames(DT)) {
-    DT[, gvkey := str_pad(as.character(gvkey), width = 6, side = "left", pad = "0")]
-  }
-}
 fix_gvkey(compustat)
 
 compustat[, datadate := as.Date(datadate)]
 
 
-#unique gvkeys in each dataset
-warn_gvkeys  <- unique(warn[!is.na(gvkey), gvkey])
-sdc_gvkeys <- unique(sdc[!is.na(gvkey), gvkey])
-capiq_gvkeys <- unique(capiq[!is.na(gvkey), gvkey])
+get_firms(warn)
+get_firms(sdc)
+get_firms(capiq)
+
 
 #check if all capiq is present in the compustat universe for the set timehorizon
 #adjust set if not
-compustat_gvkeys <- unique(compustat$gvkey)
+get_firms(compustat)
 capiq <- capiq[
-  gvkey %in% compustat_gvkeys
+  gvkey %in% compustat_firms
 ]
 
-capiq_gvkeys <- unique(capiq[!is.na(gvkey), gvkey])
+#rewrite capig firms to only include the matching firms
+get_firms(capiq)
+
 
 
 
 
 #audit
-all_layoff_gvkeys <- union(warn_gvkeys, capiq_gvkeys)
-all_gvkeys <- union(all_layoff_gvkeys, sdc_gvkeys)
-scd_layoff_intersect <- intersect(sdc_gvkeys, all_layoff_gvkeys)
+all_layoff_firms <- union( warn_firms, capiq_firms)
+all_firms <- union(all_layoff_firms, sdc_firms)
+scd_layoff_intersect <- intersect(sdc_firms, all_layoff_firms)
 
 #export union of all gvkeys
 #to be used to generate the fiscal year map by downloading compustat fiscal years for the below given set
@@ -138,11 +128,12 @@ sdc_events <- sdc_events[!is.na(fyear)]
 
 
 #audit
-warn_firms <- unique(warn_events$gvkey)
-capiq_firms <- unique(capiq_events$gvkey)
-buyback_firms <- unique(sdc_events$gvkey)
+get_firms(warn_events)
+get_firms(capiq_events)
+get_firms(sdc_events)
 
-layoff_firms <- union(warn_firms, capiq_firms)
+
+event_layoff_firms <- union(capiq_events_firms, warn_events_firms)
 
 #create fimr-year observation objects
 warn_firm_years <- unique( warn_events[, .(gvkey, fyear)])
@@ -151,7 +142,7 @@ buyback_firm_years <- unique(sdc_events[, .(gvkey, fyear)])
 
 #put WARN observations and CAPIQ observations together
 layoff_firm_years <- unique( rbindlist( list( warn_firm_years, capiq_firm_years ),use.names = TRUE ))
-layoff_firms <- unique(layoff_firm_years$gvkey)
+event_layoff_firms <- unique(layoff_firm_years$gvkey)
 
 #interection between layoff and buyback firm-year observations 
 layoff_buyback_fy_intersect <- merge(layoff_firm_years,buyback_firm_years,by = c("gvkey", "fyear"))
@@ -161,9 +152,9 @@ layoff_buyback_fy_intersect <- merge(layoff_firm_years,buyback_firm_years,by = c
 all_event_firm_years <- unique(rbindlist(list(layoff_firm_years, buyback_firm_years), use.names = TRUE))
 
 #audit again
-all_event_firms <- union(buyback_firms, layoff_firms)
-buyback_layoff_firms <- intersect( buyback_firms, layoff_firms)
-same_fy_overlap_firms <- unique( layoff_buyback_fy_intersect$gvkey)
+all_event_firms <- union(sdc_events_firms, layoff_firms)
+buyback_layoff_firms <- intersect(sdc_events_firms, layoff_firms)
+get_firms(layoff_buyback_fy_intersect)
 
 
 
@@ -208,17 +199,15 @@ panel <- merge(
 panel[ is.na(is_layoff), is_layoff := 0L]
 
 
-panel_firms <- unique(panel$gvkey)
-
-
+get_firms(panel)
 panel <- panel[ !is.na(exchg) & exchg != 0]
-panel_firms <- unique(panel$gvkey)
+get_firms(panel)
 
 #getting rid of those gvkeys that were in the compustat universe but without valid date
 panel_without_events <- setdiff(panel_firms, all_event_firms)
 panel <- panel[!gvkey %in% panel_without_events]
 
-panel_firms <- unique(panel$gvkey)
+get_firms(panel)
 
 
 

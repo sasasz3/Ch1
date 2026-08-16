@@ -2,19 +2,18 @@ library(data.table)
 library(fixest)
 
 source("config.R")
+source("reusable_functions.R")
 
-# Load final analysis panel
+# Load  panel
 panel <- readRDS(
   file.path(DATA_FOLDER, "firm_fyear_panel.rds")
 )
 
 setDT(panel)
 
-
-
 #audits
 firm_years <- nrow(panel)
-all_firms <- unique(panel$gvkey)
+get_firms(panel)
 
 
 #calendar borders - do not align with actual time horizon
