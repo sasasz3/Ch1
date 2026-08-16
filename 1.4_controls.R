@@ -435,3 +435,4 @@ etable(
   )
 )
 
+saveRDS( panel, file.path(DATA_FOLDER, "firm_fyear_panel_controls.rds"))
