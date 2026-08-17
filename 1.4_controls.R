@@ -1,438 +1,277 @@
 library(data.table)
+library(readxl)
 library(fixest)
 
 source("config.R")
+source("reusable_functions.R")
 
-panel <- readRDS( file.path(DATA_FOLDER, "firm_fyear_panel.rds"))
+#load previously made panel and controls/other variables file 
+panel <- readRDS(
+  file.path(
+    DATA_FOLDER,
+    "firm_fyear_panel.rds"
+  )
+)
+
+other_variables <- read_excel(
+  file.path(
+    DATA_FOLDER,
+    "compustat_controls.xlsx"
+  )
+)
+
 setDT(panel)
+setDT(other_variables)
 
-panel[, gvkey := as.character(gvkey)]
+clean_and_rename(other_variables)
+fix_gvkey(other_variables)
 
+other_variables[ ,gvkey := as.character(gvkey)]
+other_variables[ ,fyear := as.integer(fyear)]
 
-panel <- panel[
-  fyear >= 2002 &
-    fyear <= 2025
-]
+setorder(
+  panel,
+  gvkey,
+  fyear
+)
 
-setorder(panel, gvkey, fyear)
-
-compustat <- setDT(read_excel(file.path(DATA_FOLDER, "compustat_controls.xlsx")))
-
-
-#clean compustat data column headers
-clean_and_rename <- function(DT) {
-  current_names <- colnames(DT)
-  
-  new_names <- gsub(
-    ".*\\((.*)\\).*",
-    "\\1",
-    current_names
-  )
-  
-  setnames(
-    DT,
-    current_names,
-    new_names
-  )
-}
-
-clean_and_rename(compustat)
-
-# Fix GVKEY format
-compustat[
-  ,
-  gvkey := str_pad(
-    as.character(gvkey),
-    width = 6,
-    side = "left",
-    pad = "0"
-  )
-]
-
-setnames(compustat, c("Loss", "Net"), c("ni", "sale"))
-
-#create controls object
-controls <- unique(
-  compustat[
-    ,
-    .(
-      gvkey,
-      fyear,
-      at,
-      ni,
-      dltt,
-      dlc,
-      che,
-      sale,
-      ceq,
-      csho,
-      prcc_f
-    )
-  ],
-  by = c("gvkey", "fyear")
+#merge controls and other variables onto panel
+join_vars <- setdiff(
+  names(other_variables),
+  c("gvkey", "fyear")
 )
 
 
-# create actual control variables 
-
-#size: log(total assets)
-controls[, size := log(at)]
-
-# return on asset: net income / total assets
-controls[, roa := ni / at]
-
-#leverage 
-controls[ ,leverage :=(fcoalesce(dltt, 0) + fcoalesce(dlc, 0)) / at]
-
-#cash ratio: cash / total assets
-controls[ ,cash_ratio := che / at]
-
-#market equity
-controls[, market_equity :=  prcc_f * csho]
-
-#market-to-book ratio
-controls[ , market_to_book :=  (market_equity + at - ceq) / at]
-
-
-
-#create lagged controls 
-controls[ , previous_fyear := shift(fyear), by = gvkey]
-
-controls[
-  ,
-  `:=`(
-    lag_size = shift(size),
-    lag_roa = shift(roa),
-    lag_leverage = shift(leverage),
-    lag_cash_ratio = shift(cash_ratio),
-    lag_market_to_book = shift(market_to_book)
+panel[
+  other_variables,
+  on = .(
+    gvkey,
+    fyear
   ),
-  by = gvkey
-]
-
-
-#do not assign if function shifts to not previous years
-controls[
-  fyear != previous_fyear + 1,
-  `:=`(
-    lag_size = NA_real_,
-    lag_roa = NA_real_,
-    lag_leverage = NA_real_,
-    lag_cash_ratio = NA_real_,
-    lag_market_to_book = NA_real_,
-    lag_sales_growth = NA_real_
+  (join_vars) := mget(
+    paste0("i.", join_vars)
   )
 ]
 
+setorder(
+  panel,
+  gvkey,
+  fyear
+)
 
 
-#merge lagged controls into panel 
-controls_for_panel <- controls[
+
+#audit added variables 
+audit_vars <- c(
+  "at",
+  "sale",
+  "ni",
+  "che",
+  "ch",
+  "ivst",
+  "dlc",
+  "dltt",
+  "ceq",
+  "oancf",
+  "prstkc",
+  "sstk",
+  "capx",
+  "aqc",
+  "dltis",
+  "dltr",
+  "emp",
+  "csho",
+  "prcc_f"
+)
+
+panel[
+  ,
+  lapply(
+    .SD,
+    function(x) {
+      c(
+        n_nonmissing = sum(!is.na(x)),
+        n_zero = sum(x == 0, na.rm = TRUE),
+        n_negative = sum(x < 0, na.rm = TRUE),
+        median = median(x, na.rm = TRUE),
+        p99 = quantile(x, 0.99, na.rm = TRUE),
+        max = max(x, na.rm = TRUE)
+      )
+    }
+  ),
+  .SDcols = audit_vars
+]
+
+
+
+# create original model controls and add them to the panel 
+# Firm size
+panel[
+  at > 0,
+  size := log(at)
+]
+
+# Return on assets
+panel[
+  at > 0,
+  roa := ni / at
+]
+
+# Leverage
+panel[
+  at > 0,
+  leverage := (dltt + dlc) / at
+]
+
+# Cash ratio
+panel[
+  at > 0,
+  cash_ratio := che / at
+]
+
+# Market value of equity
+panel[
+  ,
+  market_equity := csho * prcc_f
+]
+
+# Book value
+panel[
+  ,
+  book_value := at - lt
+]
+
+# Market-to-book ratio
+panel[
+  at > 0,
+  market_to_book :=
+    (at - ceq + market_equity) / at
+]
+
+
+
+#join the lagged version of the original controls back onto the panel
+control_panel <- panel[
   ,
   .(
     gvkey,
     fyear,
-    lag_size,
-    lag_roa,
-    lag_leverage,
-    lag_cash_ratio,
-    lag_market_to_book
+    size,
+    roa,
+    leverage,
+    cash_ratio,
+    market_to_book
   )
 ]
 
-panel <- merge(
-  panel,
-  controls_for_panel,
-  by = c("gvkey", "fyear"),
-  all.x = TRUE
-)
-
-
-#check missing values for controls 
-control_missingness <- panel[
+control_lag1 <- control_panel[
   ,
   .(
-    observations = .N,
-    
-    missing_size =
-      sum(is.na(lag_size)),
-    
-    missing_roa =
-      sum(is.na(lag_roa)),
-    
-    missing_leverage =
-      sum(is.na(lag_leverage)),
-    
-    missing_cash =
-      sum(is.na(lag_cash_ratio)),
-    
-    missing_market_to_book =
-      sum(is.na(lag_market_to_book))
-
+    gvkey,
+    fyear = fyear + 1,
+    lag_size = size,
+    lag_roa = roa,
+    lag_leverage = leverage,
+    lag_cash_ratio = cash_ratio,
+    lag_market_to_book = market_to_book
   )
 ]
 
-control_missingness
-
 panel[
-  ,
-  controls_complete :=
-    complete.cases(
-      lag_size,
-      lag_roa,
-      lag_leverage,
-      lag_cash_ratio,
-      lag_market_to_book
-    )
-]
-
-panel[
-  ,
-  .(
-    total = .N,
-    complete_controls = sum(controls_complete),
-    pct_complete = mean(controls_complete)
-  )
-]
-
-
-
-#create panel with completed controls 
-panel_controls <- panel[controls_complete == TRUE]
-
-
-
-setorder(panel, gvkey, fyear)
-
-panel[
-  ,
-  previous_fyear := shift(fyear),
-  by = gvkey
-]
-
-panel[
-  ,
-  `:=`(
-    lag_layoff = shift(is_layoff),
-    lag_buyback = shift(is_buyback)
+  control_lag1,
+  on = .(
+    gvkey,
+    fyear
   ),
-  by = gvkey
-]
-
-# Remove lags where observations are not consecutive fiscal years
-panel[
-  is.na(previous_fyear) | fyear != previous_fyear + 1,
   `:=`(
-    lag_layoff = NA_integer_,
-    lag_buyback = NA_integer_
+    lag_size = i.lag_size,
+    lag_roa = i.lag_roa,
+    lag_leverage = i.lag_leverage,
+    lag_cash_ratio = i.lag_cash_ratio,
+    lag_market_to_book = i.lag_market_to_book
   )
 ]
 
-panel_controls <- panel[
-  controls_complete == TRUE
+
+#descriptive statistics for controls 
+panel[
+  ,
+  .(
+    variable = c(
+      "size",
+      "roa",
+      "leverage",
+      "cash_ratio",
+      "market_to_book"
+    ),
+    
+    mean = c(
+      mean(size, na.rm = TRUE),
+      mean(roa, na.rm = TRUE),
+      mean(leverage, na.rm = TRUE),
+      mean(cash_ratio, na.rm = TRUE),
+      mean(market_to_book, na.rm = TRUE)
+    ),
+    
+    median = c(
+      median(size, na.rm = TRUE),
+      median(roa, na.rm = TRUE),
+      median(leverage, na.rm = TRUE),
+      median(cash_ratio, na.rm = TRUE),
+      median(market_to_book, na.rm = TRUE)
+    ),
+    
+    p1 = c(
+      quantile(size, .01, na.rm = TRUE),
+      quantile(roa, .01, na.rm = TRUE),
+      quantile(leverage, .01, na.rm = TRUE),
+      quantile(cash_ratio, .01, na.rm = TRUE),
+      quantile(market_to_book, .01, na.rm = TRUE)
+    ),
+    
+    p99 = c(
+      quantile(size, .99, na.rm = TRUE),
+      quantile(roa, .99, na.rm = TRUE),
+      quantile(leverage, .99, na.rm = TRUE),
+      quantile(cash_ratio, .99, na.rm = TRUE),
+      quantile(market_to_book, .99, na.rm = TRUE)
+    )
+  )
+]
+
+
+#descriptive statistics for lagged controls 
+panel[
+  ,
+  .(
+    variable = c(
+      "lag_size",
+      "lag_roa",
+      "lag_leverage",
+      "lag_cash_ratio",
+      "lag_market_to_book"
+    ),
+    
+    mean = c(
+      mean(lag_size, na.rm = TRUE),
+      mean(lag_roa, na.rm = TRUE),
+      mean(lag_leverage, na.rm = TRUE),
+      mean(lag_cash_ratio, na.rm = TRUE),
+      mean(lag_market_to_book, na.rm = TRUE)
+    ),
+    
+    median = c(
+      median(lag_size, na.rm = TRUE),
+      median(lag_roa, na.rm = TRUE),
+      median(lag_leverage, na.rm = TRUE),
+      median(lag_cash_ratio, na.rm = TRUE),
+      median(lag_market_to_book, na.rm = TRUE)
+    )
+  )
 ]
 
 
 
-#PANEL A
-mA1_controls <- feols(
-  is_buyback ~
-    is_layoff +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-mA2_controls <- feols(
-  is_buyback ~
-    is_layoff +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-mA3_controls <- feols(
-  is_buyback ~
-    is_layoff +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    gvkey + fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-#PANEL B
-mB1_controls <- feols(
-  is_buyback ~
-    lag_layoff +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-mB2_controls <- feols(
-  is_buyback ~
-    lag_layoff +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-mB3_controls <- feols(
-  is_buyback ~
-    lag_layoff +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    gvkey + fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-#PANEL C
-mC1_controls <- feols(
-  is_layoff ~
-    is_buyback +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-mC2_controls <- feols(
-  is_layoff ~
-    is_buyback +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-mC3_controls <- feols(
-  is_layoff ~
-    is_buyback +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    gvkey + fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
 
 
-#PANEL D
-mD1_controls <- feols(
-  is_layoff ~
-    lag_buyback +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book,
-  data = panel_controls,
-  cluster = ~gvkey
-)
 
-mD2_controls <- feols(
-  is_layoff ~
-    lag_buyback +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-mD3_controls <- feols(
-  is_layoff ~
-    lag_buyback +
-    lag_size +
-    lag_roa +
-    lag_leverage +
-    lag_cash_ratio +
-    lag_market_to_book |
-    gvkey + fyear,
-  data = panel_controls,
-  cluster = ~gvkey
-)
-
-etable(
-  mA1_controls,
-  mA2_controls,
-  mA3_controls,
-  headers = c(
-    "Pooled",
-    "Year FE",
-    "Firm + Year FE"
-  )
-)
-
-etable(
-  mB1_controls,
-  mB2_controls,
-  mB3_controls,
-  headers = c(
-    "Pooled",
-    "Year FE",
-    "Firm + Year FE"
-  )
-)
-
-etable(
-  mC1_controls,
-  mC2_controls,
-  mC3_controls,
-  headers = c(
-    "Pooled",
-    "Year FE",
-    "Firm + Year FE"
-  )
-)
-
-etable(
-  mD1_controls,
-  mD2_controls,
-  mD3_controls,
-  headers = c(
-    "Pooled",
-    "Year FE",
-    "Firm + Year FE"
-  )
-)
-
-saveRDS( panel, file.path(DATA_FOLDER, "firm_fyear_panel_controls.rds"))
