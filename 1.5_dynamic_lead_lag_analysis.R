@@ -3,12 +3,11 @@ library(readxl)
 library(fixest)
 
 source("config.R")
-
-panel <- readRDS( file.path(DATA_FOLDER, "firm_fyear_panel_controls.rds"))
-setDT(panel)
+source("reusable_functions.R")
+source("1.4_controls.R")
 
 panel[, gvkey := as.character(gvkey)]
-
+panel[, fyear := as.integer(fyear)] 
 
 # keep the original event indicators in a temporary object
 event_panel <- panel[
@@ -93,6 +92,208 @@ for (k in 1:3) {
     (paste0("buyback_lead", k)) := i.value
   ]
 }
+
+
+#audit
+panel[
+  ,
+  .(
+    lag1_observed  = sum(!is.na(layoff_lag1)),
+    lag2_observed  = sum(!is.na(layoff_lag2)),
+    lag3_observed  = sum(!is.na(layoff_lag3)),
+    lead1_observed = sum(!is.na(layoff_lead1)),
+    lead2_observed = sum(!is.na(layoff_lead2)),
+    lead3_observed = sum(!is.na(layoff_lead3))
+  )
+]
+
+
+
+#descriptive stats for dynamic variables 
+dynamic_vars <- c(
+  "layoff_lag3",
+  "layoff_lag2",
+  "layoff_lag1",
+  "is_layoff",
+  "layoff_lead1",
+  "layoff_lead2",
+  "layoff_lead3",
+  "buyback_lag3",
+  "buyback_lag2",
+  "buyback_lag1",
+  "is_buyback",
+  "buyback_lead1",
+  "buyback_lead2",
+  "buyback_lead3"
+)
+
+dynamic_descriptives <- rbindlist(
+  lapply(
+    dynamic_vars,
+    function(v) {
+      
+      x <- panel[[v]]
+      
+      data.table(
+        variable = v,
+        
+        n_observable = sum(!is.na(x)),
+        
+        n_firms_observable = uniqueN(
+          panel$gvkey[!is.na(x)]
+        ),
+        
+        n_event = sum(
+          x == 1,
+          na.rm = TRUE
+        ),
+        
+        n_event_firms = uniqueN(
+          panel$gvkey[
+            !is.na(x) &
+              x == 1
+          ]
+        ),
+        
+        n_no_event = sum(
+          x == 0,
+          na.rm = TRUE
+        ),
+        
+        event_rate = mean(
+          x,
+          na.rm = TRUE
+        )
+      )
+    }
+  )
+)
+
+dynamic_descriptives
+
+
+
+
+#raw dynamics relationships
+relative_layoff_vars <- c(
+  "layoff_lag3",
+  "layoff_lag2",
+  "layoff_lag1",
+  "is_layoff",
+  "layoff_lead1",
+  "layoff_lead2",
+  "layoff_lead3"
+)
+
+relative_years <- c(
+  -3, -2, -1, 0, 1, 2, 3
+)
+
+raw_dynamic_relationship <- rbindlist(
+  lapply(
+    seq_along(relative_layoff_vars),
+    function(j) {
+      
+      v <- relative_layoff_vars[j]
+      
+      panel[
+        !is.na(get(v)),
+        .(
+          n_obs = .N,
+          
+          n_firms = uniqueN(gvkey),
+          
+          n_buybacks = sum(
+            is_buyback == 1
+          ),
+          
+          n_buyback_firms = uniqueN(
+            gvkey[is_buyback == 1]
+          ),
+          
+          buyback_rate = mean(
+            is_buyback
+          )
+        ),
+        by = .(
+          layoff_status = get(v)
+        )
+      ][
+        ,
+        relative_year := relative_years[j]
+      ]
+    }
+  )
+)
+
+setcolorder(
+  raw_dynamic_relationship,
+  c(
+    "relative_year",
+    "layoff_status",
+    "n_obs",
+    "n_firms",
+    "n_buybacks",
+    "n_buyback_firms",
+    "buyback_rate"
+  )
+)
+
+setorder(
+  raw_dynamic_relationship,
+  relative_year,
+  layoff_status
+)
+
+raw_dynamic_relationship
+
+raw_dynamic_rates <- dcast(
+  raw_dynamic_relationship,
+  relative_year ~ layoff_status,
+  value.var = "buyback_rate"
+)
+
+setnames(
+  raw_dynamic_rates,
+  c("0", "1"),
+  c(
+    "buyback_rate_no_layoff",
+    "buyback_rate_layoff"
+  )
+)
+
+raw_dynamic_rates[
+  ,
+  `:=`(
+    difference =
+      buyback_rate_layoff -
+      buyback_rate_no_layoff,
+    
+    difference_pp =
+      100 * (
+        buyback_rate_layoff -
+          buyback_rate_no_layoff
+      )
+  )
+]
+
+raw_dynamic_rates
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #layoff correlation matrix
