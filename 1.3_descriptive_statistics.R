@@ -3,7 +3,7 @@ library(fixest)
 
 source("config.R")
 source("reusable_functions.R")
-source("1.4_controls.R")
+source("1.2_controls.R")
 
 
 

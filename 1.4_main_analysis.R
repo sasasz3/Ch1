@@ -4,7 +4,7 @@ library(fixest)
 
 source("config.R")
 source("reusable_functions.R")
-source("1.4_controls.R")
+source("1.2_controls.R")
 
 panel[, gvkey := as.character(gvkey)]
 panel[, fyear := as.integer(fyear)] 
@@ -280,80 +280,6 @@ raw_dynamic_rates[
 raw_dynamic_rates
 
 
-
-
-
-#layoff correlation matrix
-layoff_dynamic_vars <- c(
-  "layoff_lag3",
-  "layoff_lag2",
-  "layoff_lag1",
-  "is_layoff",
-  "layoff_lead1",
-  "layoff_lead2",
-  "layoff_lead3"
-)
-
-layoff_correlations <- cor(
-  panel[
-    ,
-    ..layoff_dynamic_vars
-  ],
-  use = "pairwise.complete.obs"
-)
-
-round(
-  layoff_correlations,
-  3
-)
-
-
-lead2_lead3_overlap <- panel[
-  !is.na(layoff_lead2) &
-    !is.na(layoff_lead3),
-  .(
-    n_obs = .N,
-    n_firms = uniqueN(gvkey)
-  ),
-  by = .(
-    layoff_lead2,
-    layoff_lead3
-  )
-][
-  order(
-    layoff_lead2,
-    layoff_lead3
-  )
-]
-
-lead2_lead3_overlap[
-  ,
-  pct_obs := n_obs / sum(n_obs)
-]
-
-lead2_lead3_overlap
-
-panel[
-  layoff_lead2 == 1 &
-    !is.na(layoff_lead3),
-  .(
-    lead2_events = .N,
-    also_lead3 = sum(layoff_lead3 == 1),
-    pct_also_lead3 = mean(layoff_lead3 == 1),
-    firms = uniqueN(gvkey)
-  )
-]
-
-panel[
-  layoff_lead3 == 1 &
-    !is.na(layoff_lead2),
-  .(
-    lead3_events = .N,
-    also_lead2 = sum(layoff_lead2 == 1),
-    pct_also_lead2 = mean(layoff_lead2 == 1),
-    firms = uniqueN(gvkey)
-  )
-]
 
 
 #baseline regressions
@@ -902,4 +828,210 @@ etable(
 
 
 
+#multpile testing
+ct_lead123 <- coeftable(
+  m_lead123
+)
 
+
+
+lead_terms <- c(
+  "layoff_lead1",
+  "layoff_lead2",
+  "layoff_lead3"
+)
+
+
+
+
+multiple_testing_leads <- data.table(
+  
+  term = lead_terms,
+  
+  estimate =
+    ct_lead123[
+      lead_terms,
+      "Estimate"
+    ],
+  
+  std_error =
+    ct_lead123[
+      lead_terms,
+      "Std. Error"
+    ],
+  
+  p_raw =
+    ct_lead123[
+      lead_terms,
+      "Pr(>|t|)"
+    ]
+)
+
+
+
+multiple_testing_leads[
+  ,
+  `:=`(
+    
+    p_bonferroni = p.adjust(
+      p_raw,
+      method = "bonferroni"
+    ),
+    
+    p_holm = p.adjust(
+      p_raw,
+      method = "holm"
+    ),
+    
+    p_bh = p.adjust(
+      p_raw,
+      method = "BH"
+    )
+  )
+]
+
+
+
+multiple_testing_leads[
+  ,
+  `:=`(
+    
+    estimate = round(
+      estimate,
+      6
+    ),
+    
+    std_error = round(
+      std_error,
+      6
+    ),
+    
+    p_raw = round(
+      p_raw,
+      4
+    ),
+    
+    p_bonferroni = round(
+      p_bonferroni,
+      4
+    ),
+    
+    p_holm = round(
+      p_holm,
+      4
+    ),
+    
+    p_bh = round(
+      p_bh,
+      4
+    )
+  )
+]
+
+
+multiple_testing_leads
+
+
+
+#joint significance
+
+
+wald_lead12 <- wald(
+  m_lead12,
+  keep = "layoff_lead[12]"
+)
+
+wald_lead12
+
+
+wald_lead123 <- wald(
+  m_lead123,
+  keep = "layoff_lead[123]"
+)
+
+wald_lead123
+
+
+
+wald_lead23 <- wald(
+  m_lead123,
+  keep = "layoff_lead[23]"
+)
+
+wald_lead23
+
+
+
+
+
+#layoff correlation matrix
+layoff_dynamic_vars <- c(
+  "layoff_lag3",
+  "layoff_lag2",
+  "layoff_lag1",
+  "is_layoff",
+  "layoff_lead1",
+  "layoff_lead2",
+  "layoff_lead3"
+)
+
+layoff_correlations <- cor(
+  panel[
+    ,
+    ..layoff_dynamic_vars
+  ],
+  use = "pairwise.complete.obs"
+)
+
+round(
+  layoff_correlations,
+  3
+)
+
+
+lead2_lead3_overlap <- panel[
+  !is.na(layoff_lead2) &
+    !is.na(layoff_lead3),
+  .(
+    n_obs = .N,
+    n_firms = uniqueN(gvkey)
+  ),
+  by = .(
+    layoff_lead2,
+    layoff_lead3
+  )
+][
+  order(
+    layoff_lead2,
+    layoff_lead3
+  )
+]
+
+lead2_lead3_overlap[
+  ,
+  pct_obs := n_obs / sum(n_obs)
+]
+
+lead2_lead3_overlap
+
+panel[
+  layoff_lead2 == 1 &
+    !is.na(layoff_lead3),
+  .(
+    lead2_events = .N,
+    also_lead3 = sum(layoff_lead3 == 1),
+    pct_also_lead3 = mean(layoff_lead3 == 1),
+    firms = uniqueN(gvkey)
+  )
+]
+
+panel[
+  layoff_lead3 == 1 &
+    !is.na(layoff_lead2),
+  .(
+    lead3_events = .N,
+    also_lead2 = sum(layoff_lead2 == 1),
+    pct_also_lead2 = mean(layoff_lead2 == 1),
+    firms = uniqueN(gvkey)
+  )
+]

@@ -76,16 +76,38 @@ fix_gvkey(fiscal_year_map)
 fiscal_year_map[, datadate := as.Date(datadate)]
 
 #create fiscal year map for general observations
-setorder(fiscal_year_map, gvkey, datadate)
-fiscal_year_map[ ,calendar_end := datadate]
-fiscal_year_map[, calendar_start := shift(calendar_end) + days(1), by = gvkey]
+setorder(
+  fiscal_year_map,
+  gvkey,
+  fyear
+)
 
-# fill calendar_start for first observation of each firm
-fiscal_year_map[ is.na(calendar_start),
-  calendar_start := (datadate %m-% years(1)) + days(1)
+fiscal_year_map[
+  ,
+  `:=`(
+    previous_fyear = shift(fyear),
+    previous_datadate = shift(datadate)
+  ),
+  by = gvkey
 ]
 
-fiscal_year_gvkey <- unique(fiscal_year_map$gvkey)
+fiscal_year_map[
+  ,
+  calendar_end := datadate
+]
+
+# Use previous datadate only when fiscal years are consecutive
+fiscal_year_map[
+  previous_fyear == fyear - 1,
+  calendar_start := previous_datadate + days(1)
+]
+
+# Otherwise use an approximate one-year fiscal window
+fiscal_year_map[
+  is.na(calendar_start),
+  calendar_start :=
+    (datadate %m-% years(1)) + days(1)
+]
 
 
 
