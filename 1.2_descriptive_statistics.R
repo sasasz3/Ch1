@@ -3,228 +3,207 @@ library(fixest)
 
 source("config.R")
 source("reusable_functions.R")
+source("1.4_controls.R")
 
-# Load  panel
-panel <- readRDS(
-  file.path(DATA_FOLDER, "firm_fyear_panel.rds")
+
+
+
+panel[
+  ,
+  gvkey := as.character(gvkey)
+]
+
+setorder(
+  panel,
+  gvkey,
+  fyear
 )
 
-setDT(panel)
-
-#audits
+#sample audit
 firm_years <- nrow(panel)
-get_firms(panel)
+
+n_firms <- uniqueN(
+  panel$gvkey
+)
+
+year_start <- min(
+  panel$fyear,
+  na.rm = TRUE
+)
+
+year_end <- max(
+  panel$fyear,
+  na.rm = TRUE
+)
+
+event_firm_years <- panel[
+  is_layoff == 1 |
+    is_buyback == 1,
+  .N
+]
+
+sample_audit <- data.table(
+  firm_years = firm_years,
+  firms = n_firms,
+  first_fyear = year_start,
+  last_fyear = year_end,
+  event_firm_years = event_firm_years
+)
+
+sample_audit
 
 
-#calendar borders - do not align with actual time horizon
-year_start <- min(panel$fyear, na.rm = TRUE)
-year_end <- max(panel$fyear, na.rm = TRUE)
-
-
-event_firm_years <- panel[is_layoff == 1 | is_buyback == 1, .N] 
-
-
-#count frequencies 
+#event counts
 event_counts <- panel[
   ,
   .(
     firm_years = .N,
     
     layoff_firm_years =
-      sum(is_layoff == 1),
+      sum(
+        is_layoff == 1,
+        na.rm = TRUE
+      ),
     
     buyback_firm_years =
-      sum(is_buyback == 1),
+      sum(
+        is_buyback == 1,
+        na.rm = TRUE
+      ),
     
     both_firm_years =
-      sum(is_layoff == 1 &
-            is_buyback == 1),
+      sum(
+        is_layoff == 1 &
+          is_buyback == 1,
+        na.rm = TRUE
+      ),
     
     layoff_only =
-      sum(is_layoff == 1 &
-            is_buyback == 0),
+      sum(
+        is_layoff == 1 &
+          is_buyback == 0,
+        na.rm = TRUE
+      ),
     
     buyback_only =
-      sum(is_layoff == 0 &
-            is_buyback == 1),
+      sum(
+        is_layoff == 0 &
+          is_buyback == 1,
+        na.rm = TRUE
+      ),
     
     neither =
-      sum(is_layoff == 0 &
-            is_buyback == 0)
+      sum(
+        is_layoff == 0 &
+          is_buyback == 0,
+        na.rm = TRUE
+      )
   )
 ]
 
-print(event_counts)
+event_counts
 
-
-#count event rates
 
 event_rates <- panel[
   ,
   .(
-    layoff_rate = mean(is_layoff),
-    buyback_rate = mean(is_buyback),
+    layoff_rate =
+      mean(
+        is_layoff,
+        na.rm = TRUE
+      ),
+    
+    buyback_rate =
+      mean(
+        is_buyback,
+        na.rm = TRUE
+      ),
     
     both_rate =
-      mean(is_layoff == 1 &
-             is_buyback == 1),
+      mean(
+        is_layoff == 1 &
+          is_buyback == 1,
+        na.rm = TRUE
+      ),
     
     layoff_only_rate =
-      mean(is_layoff == 1 &
-             is_buyback == 0),
+      mean(
+        is_layoff == 1 &
+          is_buyback == 0,
+        na.rm = TRUE
+      ),
     
     buyback_only_rate =
-      mean(is_layoff == 0 &
-             is_buyback == 1),
+      mean(
+        is_layoff == 0 &
+          is_buyback == 1,
+        na.rm = TRUE
+      ),
     
     neither_rate =
-      mean(is_layoff == 0 &
-             is_buyback == 0)
+      mean(
+        is_layoff == 0 &
+          is_buyback == 0,
+        na.rm = TRUE
+      )
   )
 ]
 
-print(event_rates)
+event_rates
 
 
-
-
-# buyback layoff cooccurance calculation 
-p_buyback <- mean(panel$is_buyback)
-
-p_layoff <- mean(panel$is_layoff)
-
-p_buyback_given_layoff <- panel[
-  is_layoff == 1,
-  mean(is_buyback)
-]
-
-p_buyback_given_no_layoff <- panel[
-  is_layoff == 0,
-  mean(is_buyback)
-]
-
-p_layoff_given_buyback <- panel[
-  is_buyback == 1,
-  mean(is_layoff)
-]
-
-p_layoff_given_no_buyback <- panel[
-  is_buyback == 0,
-  mean(is_layoff)
-]
-
-cat("P(Buyback):", p_buyback, "\n")
-cat("P(Layoff):", p_layoff, "\n")
-
-cat(
-  "P(Buyback | Layoff):",
-  p_buyback_given_layoff,
-  "\n"
-)
-
-cat(
-  "P(Buyback | No Layoff):",
-  p_buyback_given_no_layoff,
-  "\n"
-)
-
-cat(
-  "P(Layoff | Buyback):",
-  p_layoff_given_buyback,
-  "\n"
-)
-
-cat(
-  "P(Layoff | No Buyback):",
-  p_layoff_given_no_buyback,
-  "\n"
-)
-
-
-
-#observed vs expected probabilities
-observed_joint_probability <- panel[
-  ,
-  mean(
-    is_layoff == 1 &
-      is_buyback == 1
-  )
-]
-
-expected_joint_independence <-
-  p_layoff * p_buyback
-
-overlap_ratio <-
-  observed_joint_probability /
-  expected_joint_independence
-
-cat(
-  "Observed joint probability:",
-  observed_joint_probability,
-  "\n"
-)
-
-cat(
-  "Expected joint probability under independence:",
-  expected_joint_independence,
-  "\n"
-)
-
-cat(
-  "Observed / expected overlap:",
-  overlap_ratio,
-  "\n"
-)
-
-
-# calculate absolute and relative probabilities 
-buyback_probability_difference <-
-  p_buyback_given_layoff -
-  p_buyback_given_no_layoff
-
-buyback_probability_ratio <-
-  p_buyback_given_layoff /
-  p_buyback_given_no_layoff
-
-cat(
-  "Buyback probability difference:",
-  buyback_probability_difference,
-  "\n"
-)
-
-cat(
-  "Buyback probability ratio:",
-  buyback_probability_ratio,
-  "\n"
-)
-
-
-# firm-level composition 
+#fimr level composition
 firm_summary <- panel[
   ,
   .(
     observed_years = .N,
     
     layoff_years =
-      sum(is_layoff),
+      sum(
+        is_layoff,
+        na.rm = TRUE
+      ),
     
     buyback_years =
-      sum(is_buyback),
+      sum(
+        is_buyback,
+        na.rm = TRUE
+      ),
     
     both_years =
       sum(
         is_layoff == 1 &
-          is_buyback == 1
+          is_buyback == 1,
+        na.rm = TRUE
       ),
     
     ever_layoff =
-      any(is_layoff == 1),
+      any(
+        is_layoff == 1,
+        na.rm = TRUE
+      ),
     
     ever_buyback =
-      any(is_buyback == 1)
+      any(
+        is_buyback == 1,
+        na.rm = TRUE
+      ),
+    
+    layoff_share =
+      mean(
+        is_layoff,
+        na.rm = TRUE
+      ),
+    
+    buyback_share =
+      mean(
+        is_buyback,
+        na.rm = TRUE
+      )
   ),
   by = gvkey
 ]
+
 
 firm_types <- firm_summary[
   ,
@@ -237,63 +216,224 @@ firm_types <- firm_summary[
 
 firm_types[
   ,
-  percent := 100 * N / sum(N)
+  percent :=
+    100 * N / sum(N)
 ]
 
-print(firm_types)
+firm_types
 
-#event years
-summary(
-  firm_summary$layoff_years
+
+#event frequencies
+firm_event_descriptives <- rbindlist(
+  lapply(
+    c(
+      "observed_years",
+      "layoff_years",
+      "buyback_years",
+      "both_years",
+      "layoff_share",
+      "buyback_share"
+    ),
+    function(v) {
+      
+      x <- firm_summary[[v]]
+      
+      data.table(
+        variable = v,
+        
+        n =
+          sum(
+            !is.na(x)
+          ),
+        
+        mean =
+          mean(
+            x,
+            na.rm = TRUE
+          ),
+        
+        sd =
+          sd(
+            x,
+            na.rm = TRUE
+          ),
+        
+        min =
+          min(
+            x,
+            na.rm = TRUE
+          ),
+        
+        p25 =
+          quantile(
+            x,
+            0.25,
+            na.rm = TRUE
+          ),
+        
+        median =
+          median(
+            x,
+            na.rm = TRUE
+          ),
+        
+        p75 =
+          quantile(
+            x,
+            0.75,
+            na.rm = TRUE
+          ),
+        
+        max =
+          max(
+            x,
+            na.rm = TRUE
+          )
+      )
+    }
+  )
 )
 
-summary(
-  firm_summary$buyback_years
+firm_event_descriptives
+
+
+
+#regression variables descriptive statistics
+regression_vars <- c(
+  "is_layoff",
+  "is_buyback",
+  "lag_size",
+  "lag_roa",
+  "lag_leverage",
+  "lag_cash_ratio",
+  "lag_market_to_book"
 )
 
-summary(
-  firm_summary$both_years
+regression_descriptives <- rbindlist(
+  lapply(
+    regression_vars,
+    function(v) {
+      
+      x <- panel[[v]]
+      
+      data.table(
+        variable = v,
+        
+        n =
+          sum(
+            !is.na(x)
+          ),
+        
+        mean =
+          mean(
+            x,
+            na.rm = TRUE
+          ),
+        
+        sd =
+          sd(
+            x,
+            na.rm = TRUE
+          ),
+        
+        min =
+          min(
+            x,
+            na.rm = TRUE
+          ),
+        
+        p25 =
+          quantile(
+            x,
+            0.25,
+            na.rm = TRUE
+          ),
+        
+        median =
+          median(
+            x,
+            na.rm = TRUE
+          ),
+        
+        p75 =
+          quantile(
+            x,
+            0.75,
+            na.rm = TRUE
+          ),
+        
+        max =
+          max(
+            x,
+            na.rm = TRUE
+          )
+      )
+    }
+  )
 )
 
+regression_descriptives
 
-#time trends
+
+#fiscal year trends
 year_summary <- panel[
   ,
   .(
-    firms = uniqueN(gvkey),
-    firm_years = .N,
+    firms =
+      uniqueN(
+        gvkey
+      ),
+    
+    firm_years =
+      .N,
     
     layoff_firm_years =
-      sum(is_layoff),
+      sum(
+        is_layoff,
+        na.rm = TRUE
+      ),
     
     buyback_firm_years =
-      sum(is_buyback),
+      sum(
+        is_buyback,
+        na.rm = TRUE
+      ),
     
     both_firm_years =
       sum(
         is_layoff == 1 &
-          is_buyback == 1
+          is_buyback == 1,
+        na.rm = TRUE
       ),
     
     layoff_rate =
-      mean(is_layoff),
+      mean(
+        is_layoff,
+        na.rm = TRUE
+      ),
     
     buyback_rate =
-      mean(is_buyback),
+      mean(
+        is_buyback,
+        na.rm = TRUE
+      ),
     
     both_rate =
       mean(
         is_layoff == 1 &
-          is_buyback == 1
+          is_buyback == 1,
+        na.rm = TRUE
       )
   ),
   by = fyear
 ]
 
-setorder(year_summary, fyear)
+setorder(
+  year_summary,
+  fyear
+)
 
-print(year_summary)
-
+year_summary
 
 
 #within firm variation
@@ -301,103 +441,233 @@ variation_summary <- panel[
   ,
   .(
     layoff_variation =
-      uniqueN(is_layoff) > 1,
+      uniqueN(
+        is_layoff[
+          !is.na(is_layoff)
+        ]
+      ) > 1,
     
     buyback_variation =
-      uniqueN(is_buyback) > 1
+      uniqueN(
+        is_buyback[
+          !is.na(is_buyback)
+        ]
+      ) > 1
   ),
   by = gvkey
 ]
 
-variation_summary[
+
+variation_table <- variation_summary[
   ,
   .(
     firms = .N,
     
     variation_layoff =
-      sum(layoff_variation),
+      sum(
+        layoff_variation
+      ),
     
     variation_buyback =
-      sum(buyback_variation),
+      sum(
+        buyback_variation
+      ),
     
     variation_both =
       sum(
+        layoff_variation &
+          buyback_variation
+      ),
+    
+    pct_variation_layoff =
+      mean(
+        layoff_variation
+      ),
+    
+    pct_variation_buyback =
+      mean(
+        buyback_variation
+      ),
+    
+    pct_variation_both =
+      mean(
         layoff_variation &
           buyback_variation
       )
   )
 ]
 
-#persistence
-setorder(panel, gvkey, fyear)
+variation_table
 
-panel[
+
+
+#within firm event dispersion
+within_firm_descriptives <- panel[
   ,
-  lag_layoff := shift(is_layoff),
+  .(
+    layoff_mean =
+      mean(
+        is_layoff,
+        na.rm = TRUE
+      ),
+    
+    layoff_sd =
+      sd(
+        is_layoff,
+        na.rm = TRUE
+      ),
+    
+    buyback_mean =
+      mean(
+        is_buyback,
+        na.rm = TRUE
+      ),
+    
+    buyback_sd =
+      sd(
+        is_buyback,
+        na.rm = TRUE
+      )
+  ),
   by = gvkey
-]
-
-panel[
+][
   ,
-  lag_buyback := shift(is_buyback),
-  by = gvkey
+  .(
+    mean_within_layoff_sd =
+      mean(
+        layoff_sd,
+        na.rm = TRUE
+      ),
+    
+    median_within_layoff_sd =
+      median(
+        layoff_sd,
+        na.rm = TRUE
+      ),
+    
+    mean_within_buyback_sd =
+      mean(
+        buyback_sd,
+        na.rm = TRUE
+      ),
+    
+    median_within_buyback_sd =
+      median(
+        buyback_sd,
+        na.rm = TRUE
+      )
+  )
 ]
 
-panel[
+within_firm_descriptives
+
+
+#event persistence
+event_panel <- panel[
   ,
-  lag_fyear := shift(fyear),
-  by = gvkey
+  .(
+    gvkey,
+    fyear,
+    is_layoff,
+    is_buyback
+  )
 ]
 
-panel[
+
+event_lag1 <- event_panel[
   ,
-  consecutive_year :=
-    fyear - lag_fyear == 1
+  .(
+    gvkey,
+    fyear = fyear + 1,
+    lag_layoff = is_layoff,
+    lag_buyback = is_buyback
+  )
 ]
 
+
 panel[
-  consecutive_year == TRUE,
+  event_lag1,
+  on = .(
+    gvkey,
+    fyear
+  ),
+  `:=`(
+    lag_layoff = i.lag_layoff,
+    lag_buyback = i.lag_buyback
+  )
+]
+
+
+persistence_summary <- panel[
+  !is.na(lag_layoff) &
+    !is.na(lag_buyback),
   .(
     P_layoff_given_previous_layoff =
-      mean(is_layoff[lag_layoff == 1]),
+      mean(
+        is_layoff[
+          lag_layoff == 1
+        ],
+        na.rm = TRUE
+      ),
     
     P_layoff_given_previous_no_layoff =
-      mean(is_layoff[lag_layoff == 0]),
+      mean(
+        is_layoff[
+          lag_layoff == 0
+        ],
+        na.rm = TRUE
+      ),
     
     P_buyback_given_previous_buyback =
-      mean(is_buyback[lag_buyback == 1]),
+      mean(
+        is_buyback[
+          lag_buyback == 1
+        ],
+        na.rm = TRUE
+      ),
     
     P_buyback_given_previous_no_buyback =
-      mean(is_buyback[lag_buyback == 0]),
+      mean(
+        is_buyback[
+          lag_buyback == 0
+        ],
+        na.rm = TRUE
+      ),
     
     P_buyback_given_previous_layoff =
-      mean(is_buyback[lag_layoff == 1]),
+      mean(
+        is_buyback[
+          lag_layoff == 1
+        ],
+        na.rm = TRUE
+      ),
     
     P_buyback_given_previous_no_layoff =
-      mean(is_buyback[lag_layoff == 0]),
+      mean(
+        is_buyback[
+          lag_layoff == 0
+        ],
+        na.rm = TRUE
+      ),
     
-    # Cross-event: previous buyback -> current layoff
     P_layoff_given_previous_buyback =
-      mean(is_layoff[lag_buyback == 1]),
+      mean(
+        is_layoff[
+          lag_buyback == 1
+        ],
+        na.rm = TRUE
+      ),
     
     P_layoff_given_previous_no_buyback =
-      mean(is_layoff[lag_buyback == 0])
+      mean(
+        is_layoff[
+          lag_buyback == 0
+        ],
+        na.rm = TRUE
+      )
   )
 ]
 
-table(
-  Layoff = panel$is_layoff,
-  Buyback = panel$is_buyback
-)
-
-prop.table(
-  table(
-    Layoff = panel$is_layoff,
-    Buyback = panel$is_buyback
-  )
-)
-
-
-
+persistence_summary
 
 

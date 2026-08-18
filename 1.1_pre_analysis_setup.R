@@ -56,7 +56,7 @@ scd_layoff_intersect <- intersect(sdc_firms, all_layoff_firms)
 
 #export union of all gvkeys
 #to be used to generate the fiscal year map by downloading compustat fiscal years for the below given set
-writeLines(sort(all_gvkeys), file.path(DATA_FOLDER, "all_gvkeys_for_compustat.txt"))
+writeLines(sort(all_firms), file.path(DATA_FOLDER, "all_gvkeys_for_compustat.txt"))
 
 # create event objects w/ valid dates
 warn_events <- unique(warn[,.(gvkey, date)])
@@ -152,8 +152,8 @@ layoff_buyback_fy_intersect <- merge(layoff_firm_years,buyback_firm_years,by = c
 all_event_firm_years <- unique(rbindlist(list(layoff_firm_years, buyback_firm_years), use.names = TRUE))
 
 #audit again
-all_event_firms <- union(sdc_events_firms, layoff_firms)
-buyback_layoff_firms <- intersect(sdc_events_firms, layoff_firms)
+all_event_firms <- union(sdc_events_firms, event_layoff_firms)
+buyback_layoff_firms <- intersect(sdc_events_firms, event_layoff_firms)
 get_firms(layoff_buyback_fy_intersect)
 
 
