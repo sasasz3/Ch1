@@ -34,6 +34,45 @@ fix_gvkey <- function(DT) {
 }
 
 
+#exclude financial firms and utilities based on SIC codes
+filter_industries <- function(DT, sic_var = "sic") {
+  
+  if (!sic_var %in% colnames(DT)) {
+    stop(paste("Column", sic_var, "not found in dataset"))
+  }
+  
+  sic_codes <- suppressWarnings(
+    as.integer(as.character(DT[[sic_var]]))
+  )
+  
+  #identify financial firms and utilities
+  exclude <- (
+    (sic_codes >= 4900 & sic_codes <= 4949) |
+      (sic_codes >= 6000 & sic_codes <= 6999)
+  )
+  
+  #exclude identified industries; retain missing SIC observations
+  DT <- DT[is.na(exclude) | !exclude]
+  
+  return(DT)
+}
+
+
+#filter for firms listed on NYSE, NYSE American and NASDAQ
+filter_exchange <- function(DT, exchange_var = "exchg") {
+  
+  if (!exchange_var %in% colnames(DT)) {
+    stop(paste("Column", exchange_var, "not found in dataset"))
+  }
+  
+  #retain only the three major US exchanges
+  DT <- DT[get(exchange_var) %in% c(11, 12, 14)]
+  
+  return(DT)
+}
+
+
+
 #count the number of unique gvkeys and stores them as a list
 get_firms <- function(DT) {
   
