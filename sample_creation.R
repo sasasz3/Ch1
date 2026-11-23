@@ -12,22 +12,22 @@ source("reusable_functions.R")
 #-------------------------------------------------------------------
 
 #load raw repurchase data
-repurchases <- setDT(read_excel(file.path(DATA_FOLDER, "repurchases.xlsx")))
+original_sample <- setDT(read_excel(file.path(DATA_FOLDER, "sample_with_repurchases.xlsx")))
 
 #get rid of special characters and unnecessary text in column names 
 #set all column names to lowercase
-clean_and_rename(repurchases)
+clean_and_rename(original_sample)
 
 
 #force gvkey and dates into the right object types
-repurchases[, gvkey := as.character(gvkey)]
-repurchases[, datadate := as.Date(datadate)]
+original_sample[, gvkey := as.character(gvkey)]
+original_sample[, datadate := as.Date(datadate)]
 
 #filter out financial firms and utilities based on SIC codes
-repurchases <- filter_industries(repurchases)
+original_sample <- filter_industries(original_sample)
 
 #filter out non NYSE NASDAQ and AMEX exchange observations 
-repurchases <- filter_exchange(repurchases)
+original_sample <- filter_exchange(original_sample)
 
 
 
@@ -35,16 +35,16 @@ repurchases <- filter_exchange(repurchases)
 # IDENTIFY AND RESOLVE DUPLICATES
 #--------------------------------------------------------------
 
-# Identify duplicate firm-year combinations
-duplicates <- repurchases[
+#identify duplicate firm-year combinations
+duplicates <- original_sample[
   , .N, by = .(gvkey, fyear)
 ][N > 1]
 
-# Count duplicate firm-year combinations before cleaning
+#count duplicate firm-year combinations before cleaning
 duplicates[, .N]
 
-# Retain the observation with non-missing PRSTKC
-duplicates_to_keep <- repurchases[
+#keep the observation with non-missing PRSTKC
+duplicates_to_keep <- original_sample[
   duplicates,
   on = .(gvkey, fyear),
   nomatch = 0
@@ -54,22 +54,22 @@ duplicates_to_keep <- repurchases[
   by = .(gvkey, fyear)
 ]
 
-# Remove original duplicate groups
-repurchases <- repurchases[
+#remove original duplicate groups
+original_sample <- original_sample[
   !duplicates,
   on = .(gvkey, fyear)
 ]
 
-# Add back selected observations
-repurchases <- rbind(
-  repurchases,
+#add back selected observations
+original_sample <- rbind(
+  original_sample,
   duplicates_to_keep,
   fill = TRUE
 )
 
 
 #check remaining duplicate firm-year combinations
-remaining_duplicates <- repurchases[
+remaining_duplicates <- original_sample[
   , .N, by = .(gvkey, fyear)
 ][N > 1]
 
@@ -85,21 +85,21 @@ rm(duplicates, duplicates_to_keep, remaining_duplicates)
 #CREATE THE REPURCHASE VARIABLE 
 #----------------------------------------------------------------
 
-setorder(repurchases, gvkey, fyear)
+setorder(original_sample, gvkey, fyear)
 
 #check variable availability 
-repurchases[is.na(prstkc), .N]
-repurchases[is.na(pstkrv), .N]
+original_sample[is.na(prstkc), .N]
+original_sample[is.na(pstkrv), .N]
 
 
 #define previous year
-repurchases[, previous_fyear := shift(fyear), by = gvkey]
+original_sample[, previous_fyear := shift(fyear), by = gvkey]
 
 #create previous year value of the net number of prefer shared outstanding 
 #make sure fiscal years are consecutive
-repurchases[, previous_pstkrv := shift(pstkrv), by = gvkey]
+original_sample[, previous_pstkrv := shift(pstkrv), by = gvkey]
 
-repurchases[, preferred_stock_reduction := fifelse(
+original_sample[, preferred_stock_reduction := fifelse(
   !is.na(previous_fyear) &
     previous_fyear == fyear - 1 &
     !is.na(previous_pstkrv) &
@@ -108,19 +108,19 @@ repurchases[, preferred_stock_reduction := fifelse(
   0
 )]
 
-#draw zero lower limi for calculation for no negative repurchases
-repurchases[, actual_repurchases :=
+#draw zero lower limit for calculation for no negative repurchases
+original_sample[, actual_repurchases :=
               pmax(prstkc - preferred_stock_reduction, 0)]
 
 
 
 
 
-#AUDIT MISSING VALUES (only missing PRSTKC)
+#AUDIT MISSING VALUES FOR REPURCHASES (only missing PRSTKC)
 #----------------------------------------------------------------
 
 #check missing values
-repurchases[, .(
+original_sample[, .(
   missing_prstkc = sum(is.na(prstkc)),
   missing_pstkrv = sum(is.na(pstkrv)),
   missing_adjustment = sum(is.na(preferred_stock_reduction)),
@@ -133,7 +133,7 @@ repurchases[, .(
 #--------------------------------------------------------------
 
 #check the count of observations
-repurchases[, .(
+original_sample[, .(
   missing = sum(is.na(actual_repurchases)),
   non_missing = sum(!is.na(actual_repurchases)),
   zero_repurchases = sum(actual_repurchases == 0, na.rm = TRUE),
@@ -150,11 +150,11 @@ repurchases[, .(
 #----------------------------------------------------------------
 
 #calculate market value of equity
-repurchases[, market_cap := prcc_f * csho]
+original_sample[, market_cap := prcc_f * csho]
 
 
 #apply 1% market capitalisation threshold
-repurchases[, adjusted_repurchases := fifelse(
+original_sample[, adjusted_repurchases := fifelse(
   is.na(actual_repurchases) | is.na(market_cap) |
     market_cap <= 0,
   NA_real_,
@@ -166,12 +166,12 @@ repurchases[, adjusted_repurchases := fifelse(
 )]
 
 #check observations
-repurchases[, .(
+original_sample[, .(
   missing = sum(is.na(adjusted_repurchases)),
-  non_missing = sum(!is.na(adjusted_repurchases)),
-  zero_repurchases = sum(adjusted_repurchases == 0, na.rm = TRUE),
-  positive_repurchases = sum(adjusted_repurchases > 0, na.rm = TRUE),
-  negative_repurchases = sum(adjusted_repurchases < 0, na.rm = TRUE)
+  repurchases_adjusted = sum(!is.na(adjusted_repurchases)),
+  zero_repurchases_adjusted = sum(adjusted_repurchases == 0, na.rm = TRUE),
+  positive_repurchases_adjusted = sum(adjusted_repurchases > 0, na.rm = TRUE),
+  negative_repurchases_adjusted = sum(adjusted_repurchases < 0, na.rm = TRUE)
 )]
 
 
@@ -181,21 +181,18 @@ repurchases[, .(
 #CREATE REPURCHASE INTENSITY VARIABLE 
 #----------------------------------------------------------------
 
-# Ensure observations are ordered chronologically within each firm
-setorder(repurchases, gvkey, fyear)
-
 # Obtain total assets from the previous fiscal year
-repurchases[, `:=`(
+original_sample[, `:=`(
   lag_fyear_assets = shift(fyear),
   lag_at = shift(at)
 ), by = gvkey]
 
 #check variable availability
-repurchases[is.na(lag_at), .N]
+original_sample[is.na(lag_at), .N]
 
 # Retain lagged assets only when the previous observation is
 # from the immediately preceding fiscal year
-repurchases[
+original_sample[
   is.na(lag_fyear_assets) | lag_fyear_assets != fyear - 1,
   lag_at := NA_real_
 ]
@@ -203,7 +200,7 @@ repurchases[
 
 
 #calculate adjusted repurchase intensity 
-repurchases[, adjusted_repurchase_intensity := fifelse(
+original_sample[, adjusted_repurchase_intensity := fifelse(
   !is.na(adjusted_repurchases) &
     !is.na(lag_at) &
     lag_at > 0,
@@ -214,7 +211,7 @@ repurchases[, adjusted_repurchase_intensity := fifelse(
 
 
 # Adjusted repurchase intensity
-repurchases[, .(
+original_sample[, .(
   total_observations = .N,
   missing = sum(is.na(adjusted_repurchase_intensity)),
   non_missing = sum(!is.na(adjusted_repurchase_intensity)),
@@ -234,13 +231,13 @@ repurchases[, .(
 
 # Calculate 1st and 99th percentile cutoffs across the full sample
 intensity_cutoffs <- quantile(
-  repurchases$adjusted_repurchase_intensity,
+  original_sample$adjusted_repurchase_intensity,
   probs = c(0.01, 0.99),
   na.rm = TRUE
 )
 
 # Create winsorised intensity variable
-repurchases[, adjusted_repurchase_intensity_w := pmin(
+original_sample[, adjusted_repurchase_intensity_w := pmin(
   pmax(
     adjusted_repurchase_intensity,
     intensity_cutoffs[1]
@@ -252,7 +249,7 @@ repurchases[, adjusted_repurchase_intensity_w := pmin(
 intensity_cutoffs
 
 # Count observations affected by winsorisation
-repurchases[, .(
+original_sample[, .(
   observations = sum(!is.na(adjusted_repurchase_intensity)),
   lower_winsorised = sum(
     adjusted_repurchase_intensity < intensity_cutoffs[1],
@@ -269,7 +266,7 @@ repurchases[, .(
 #------------------------------------------------------------------
 
 # Calculate positive and observed repurchase years per firm
-firm_counts <- repurchases[, .(
+firm_counts <- original_sample[, .(
   observed_years = sum(!is.na(adjusted_repurchases)),
   positive_years = sum(adjusted_repurchases > 0, na.rm = TRUE)
 ), by = gvkey]
@@ -312,7 +309,7 @@ positive_year_distribution
 # 3. YEARLY REPURCHASE STATISTICS
 #------------------------------------------------------------------
 
-yearly_statistics <- repurchases[, .(
+yearly_statistics <- original_sample[, .(
   
   # Number of observations with available adjusted repurchases
   observations = sum(!is.na(adjusted_repurchases)),
@@ -407,13 +404,13 @@ descriptive_stats <- function(data, variable, variable_name,
 full_sample_statistics <- rbindlist(list(
   
   descriptive_stats(
-    repurchases,
+    original_sample,
     "adjusted_repurchases",
     "Adjusted repurchases"
   ),
   
   descriptive_stats(
-    repurchases,
+    original_sample,
     "adjusted_repurchase_intensity_w",
     "Winsorised adjusted repurchase intensity (%)",
     percentage = TRUE
@@ -428,7 +425,7 @@ full_sample_statistics
 #------------------------------------------------------------------
 
 # Restrict sample to positive adjusted repurchases
-positive_repurchases <- repurchases[
+positive_repurchases <- original_sample[
   adjusted_repurchases > 0
 ]
 
@@ -456,7 +453,7 @@ positive_sample_statistics
 # 6. FIRM-LEVEL OBSERVATION PERIOD
 #------------------------------------------------------------------
 
-firm_observation_summary <- repurchases[
+firm_observation_summary <- original_sample[
   !is.na(adjusted_repurchases),
   .(observed_years = .N),
   by = gvkey
@@ -474,7 +471,23 @@ firm_observation_summary
 # 7. SAMPLE SIZE SUMMARY
 #------------------------------------------------------------------
 
-sample_summary <- repurchases[, .(
+# Restrict the sample to observations with available adjusted repurchases
+original_sample <- original_sample[
+  !is.na(adjusted_repurchases)
+]
+
+# Verify the restricted sample
+original_sample[, .(
+  observations = .N,
+  firms = uniqueN(gvkey),
+  positive_repurchases = sum(adjusted_repurchases > 0),
+  zero_repurchases = sum(adjusted_repurchases == 0)
+)]
+
+
+
+
+sample_summary <- original_sample[, .(
   total_firm_years = .N,
   firms = uniqueN(gvkey),
   available_adjusted_repurchases =
@@ -490,7 +503,7 @@ sample_summary <- repurchases[, .(
 sample_summary
 
 
-saveRDS(repurchases, file.path(DATA_FOLDER, "repurchases.rds"))
+saveRDS(original_sample, file.path(DATA_FOLDER, "sample_with_repurchases.rds"))
 
 
 
