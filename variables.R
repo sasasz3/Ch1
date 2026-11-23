@@ -12,7 +12,9 @@ analysis_sample <- readRDS(
   file.path(DATA_FOLDER, "sample_with_repurchases.rds")
 )
 
-
+sdc <- setDT(read_excel(file.path(DATA_FOLDER, "sdc_data_final.xlsx"),sheet = "sdc"))
+sdc[, gvkey := as.character(gvkey)]
+sdc[, date := as.Date(date)]
 
 #import data: capiq, warn, sdc and fiscal year calendar (later controls)
 warn <- setDT(read_excel(file.path(DATA_FOLDER, "layoffs_warn.xlsx")))
@@ -141,6 +143,55 @@ analysis_sample[
 
 
 
+
+#ASSIGN SDC ANNOUNCEMENTS TO FISCAL YEARS IN REPURCHASES DATA
+#----------------------------------------------------------------
+
+# Extract SDC announcement dates
+repurchase_dates <- sdc[, .(gvkey, date)]
+
+# Remove missing identifiers and dates
+repurchase_dates <- unique(
+  repurchase_dates[
+    !is.na(gvkey) & !is.na(date)
+  ]
+)
+
+# Initialise repurchase announcement variable
+analysis_sample[, repurchase_announcement := NA_integer_]
+
+# Match repurchase announcements to fiscal-year boundaries
+repurchase_matches <- repurchase_dates[
+  analysis_sample,
+  on = .(
+    gvkey,
+    date >= fiscal_year_start,
+    date <= fiscal_year_end
+  ),
+  nomatch = 0L,
+  allow.cartesian = TRUE
+]
+
+# Identify firm-year observations with at least one announcement
+repurchase_matches <- unique(
+  repurchase_matches[, .(gvkey, fyear)]
+)
+
+# Assign zero to eligible observations initially
+analysis_sample[
+  !is.na(prstkc),
+  repurchase_announcement := 0L
+]
+
+# Assign one where an announcement was identified
+analysis_sample[
+  repurchase_matches,
+  on = .(gvkey, fyear),
+  repurchase_announcement := 1L
+]
+
+
+
 #DESCRIPTIVE STATISTICS FOR LAYOFF ANNOUNCEMENTS
 #----------------------------------------------------------------
 
@@ -203,6 +254,75 @@ firm_layoff_stats[
   .N,
   by = .(layoff_years)
 ][order(layoff_years)]
+
+
+#DESCRIPTIVE STATISTICS FOR REPURCHASE ANNOUNCEMENTS
+#----------------------------------------------------------------
+
+# Number and percentage of observations
+repurchase_stats <- analysis_sample[
+  !is.na(repurchase_announcement),
+  .(
+    observations = .N,
+    repurchase_1 = sum(repurchase_announcement == 1),
+    repurchase_0 = sum(repurchase_announcement == 0),
+    pct_repurchase = mean(repurchase_announcement == 1) * 100,
+    pct_no_repurchase = mean(repurchase_announcement == 0) * 100
+  )
+]
+
+repurchase_stats
+
+
+# Firm statistics
+firm_repurchase_stats <- analysis_sample[
+  !is.na(repurchase_announcement),
+  .(
+    firm_years = .N,
+    repurchase_years = sum(repurchase_announcement == 1),
+    no_repurchase_years = sum(repurchase_announcement == 0),
+    ever_repurchase = as.integer(any(repurchase_announcement == 1))
+  ),
+  by = gvkey
+]
+
+# Overall firm statistics
+firm_repurchase_stats[
+  ,
+  .(
+    unique_firms = .N,
+    firms_with_repurchases = sum(ever_repurchase == 1),
+    firms_without_repurchases = sum(ever_repurchase == 0),
+    pct_firms_with_repurchases = mean(ever_repurchase == 1) * 100
+  )
+]
+
+
+# Annual distribution of repurchase announcements
+annual_repurchases <- analysis_sample[
+  !is.na(repurchase_announcement),
+  .(
+    firm_year_observations = .N,
+    repurchase_observations = sum(repurchase_announcement == 1),
+    no_repurchase_observations = sum(repurchase_announcement == 0),
+    pct_repurchase = mean(repurchase_announcement == 1) * 100,
+    unique_firms = uniqueN(gvkey)
+  ),
+  by = fyear
+][order(fyear)]
+
+annual_repurchases
+
+
+# Distribution of repurchase years per firm
+firm_repurchase_stats[
+  ,
+  .N,
+  by = .(repurchase_years)
+][order(repurchase_years)]
+
+
+
 
 
 
